@@ -45,6 +45,7 @@ def get_device_schema(device: Optional[Dict[str, Any]] = None) -> vol.Schema:
     )
 
 
+@config_entries.HANDLERS.register(DOMAIN)
 class PvoConfigFlow(config_entries.ConfigFlow):
     """Handle a config flow for PV Optimizer."""
 

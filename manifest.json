@@ -1,5 +1,5 @@
 {
-  "domain": "pvo_optimizer",
+  "domain": "pv_optimizer",
   "name": "PV Überschuss Optimizer",
   "codeowners": [],
   "config_flow": true,
