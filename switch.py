@@ -4,13 +4,11 @@ from homeassistant.core import callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
 from . import const
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up the switch platform."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]
     coordinator = hass.data[const.DOMAIN][entry.entry_id]
 
     @callback
@@ -30,12 +28,10 @@ class PvoDeviceSwitch(CoordinatorEntity, SwitchEntity):
         self._attr_name = f"PVO {self._device_name}"
         device_unique_id = f"pvo_device_{self._device_name.lower().replace(' ', '_')}"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, device_unique_id)},
             identifiers={(const.DOMAIN, device_unique_id)},
             # The name attribute is not needed here as it will be inherited from the device.
             # name=f"PVO {self._device_name}",
             # manufacturer="PV Optimizer",
-            # via_device=(DOMAIN, "controller"),
             # via_device=(const.DOMAIN, "controller"),
         )
         # The switch itself should be for enabling/disabling automation
@@ -48,8 +44,7 @@ class PvoDeviceSwitch(CoordinatorEntity, SwitchEntity):
         """When entity is added to hass."""
         await super().async_added_to_hass()
         # Store the entity_id in hass.data for the coordinator to find
-        if self.unique_id:
-            self.hass.data[DOMAIN][self.unique_id] = self.entity_id
+        if self.unique_id: # This check is not strictly necessary as unique_id is always set.
             self.hass.data[const.DOMAIN][self.unique_id] = self.entity_id
 
     @property

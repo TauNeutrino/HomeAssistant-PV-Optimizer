@@ -5,8 +5,8 @@ import logging
 from datetime import timedelta, datetime
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, async_get_current_instance
-from homeassistant.helpers.entity import Entity
-from .const import *
+from homeassistant.helpers.entity import Entity # noqa: F401
+from . import const
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -15,15 +15,15 @@ class PVOptimizerDevice:
 
     def __init__(self, hass: HomeAssistant, config: dict):
         self.hass = hass
-        self.name = config.get(CONF_NAME)
-        self.switch_entity_id = config.get(CONF_SWITCH_ENTITY_ID)
-        self.power_sensor_entity_id = config.get(CONF_POWER_SENSOR_ENTITY_ID)
-        self.priority = config.get(CONF_PRIORITY, DEFAULT_PRIORITY)
-        self.nominal_power = config.get(CONF_NOMINAL_POWER)
-        self.power_threshold = config.get(CONF_POWER_THRESHOLD, DEFAULT_POWER_THRESHOLD)
-        self.duration_on = timedelta(minutes=config.get(CONF_DURATION_ON, DEFAULT_DURATION_ON))
-        self.duration_off = timedelta(minutes=config.get(CONF_DURATION_OFF, DEFAULT_DURATION_OFF))
-        self.invert_switch = config.get(CONF_INVERT_SWITCH, DEFAULT_INVERT_SWITCH)
+        self.name = config.get(const.CONF_NAME)
+        self.switch_entity_id = config.get(const.CONF_SWITCH_ENTITY_ID)
+        self.power_sensor_entity_id = config.get(const.CONF_POWER_SENSOR_ENTITY_ID)
+        self.priority = config.get(const.CONF_PRIORITY, const.DEFAULT_PRIORITY)
+        self.nominal_power = config.get(const.CONF_NOMINAL_POWER)
+        self.power_threshold = config.get(const.CONF_POWER_THRESHOLD, const.DEFAULT_POWER_THRESHOLD)
+        self.duration_on = timedelta(minutes=config.get(const.CONF_DURATION_ON, const.DEFAULT_DURATION_ON))
+        self.duration_off = timedelta(minutes=config.get(const.CONF_DURATION_OFF, const.DEFAULT_DURATION_OFF))
+        self.invert_switch = config.get(const.CONF_INVERT_SWITCH, const.DEFAULT_INVERT_SWITCH)
         
         self.is_on = False
         self.is_locked = False
@@ -90,10 +90,10 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         super().__init__(
             hass,
             _LOGGER,
-            name=DOMAIN,
-            update_interval=timedelta(seconds=config.get(CONF_POLLING_FREQUENCY, 60)),
+            name=const.DOMAIN,
+            update_interval=timedelta(seconds=config.get(const.CONF_POLLING_FREQUENCY, 60)),
         )
-        self.pv_surplus_sensor = config.get(CONF_PV_SURPLUS_SENSOR)
+        self.pv_surplus_sensor = config.get(const.CONF_PV_SURPLUS_SENSOR)
         self._config = config
         self.devices: list[PVOptimizerDevice] = []
         self._async_add_entities_callbacks = []
@@ -107,7 +107,7 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("Initializing PV Optimizer devices.")
         
         # Create device instances
-        self.devices = [PVOptimizerDevice(self.hass, device_config) for device_config in self._config.get(CONF_DEVICES, [])]
+        self.devices = [PVOptimizerDevice(self.hass, device_config) for device_config in self._config.get(const.CONF_DEVICES, [])]
 
         # Create entities for all platforms
         from .switch import PvoDeviceSwitch
