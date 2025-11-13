@@ -8,7 +8,20 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
-from .const import CONF_DEVICES, CONF_PV_SURPLUS_SENSOR, DOMAIN
+from .const import (
+    CONF_DEVICES,
+    CONF_PV_SURPLUS_SENSOR,
+    DOMAIN,
+    CONF_POLLING_FREQUENCY,
+    CONF_SWITCH_ENTITY_ID,
+    CONF_NOMINAL_POWER,
+    CONF_PRIORITY,
+    CONF_POWER_THRESHOLD,
+    CONF_DURATION_ON,
+    CONF_DURATION_OFF,
+    CONF_INVERT_SWITCH,
+    DEFAULT_POWER_THRESHOLD,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,26 +33,31 @@ def get_device_schema(device: Optional[Dict[str, Any]] = None) -> vol.Schema:
     return vol.Schema(
         {
             vol.Required("name", default=device.get("name", "")): str,
-            vol.Required(
-                "switch_entity_id", default=device.get("switch_entity_id", "")
-            ): selector.EntitySelector(
+            vol.Required(CONF_SWITCH_ENTITY_ID, default=device.get(CONF_SWITCH_ENTITY_ID, "")): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain=["switch", "light", "fan"]),
             ),
             # Power consumption of the device in Watts.
-            vol.Required("power", default=device.get("power", 0)): vol.All(
+            vol.Required(CONF_NOMINAL_POWER, default=device.get(CONF_NOMINAL_POWER, 0)): vol.All(
                 vol.Coerce(int), vol.Range(min=0)
             ),
             # Priority of the device (1-10), lower number means higher priority.
-            vol.Required("priority", default=device.get("priority", 10)): vol.All(
+            vol.Required(CONF_PRIORITY, default=device.get(CONF_PRIORITY, 10)): vol.All(
                 vol.Coerce(int), vol.Range(min=1, max=10)
             ),
+            vol.Optional(CONF_POWER_THRESHOLD, default=device.get(CONF_POWER_THRESHOLD, DEFAULT_POWER_THRESHOLD)): vol.All(
+                vol.Coerce(int), vol.Range(min=0)
+            ),
             # Minimum time the device should stay on after being turned on, in minutes.
-            vol.Optional("min_on_time", default=device.get("min_on_time", 0)): vol.All(
+            vol.Optional(CONF_DURATION_ON, default=device.get(CONF_DURATION_ON, 10)): vol.All(
                 vol.Coerce(int), vol.Range(min=0)
             ),
             # Minimum time the device should stay off after being turned off, in minutes.
-            vol.Optional("min_off_time", default=device.get("min_off_time", 0)): vol.All(
+            vol.Optional(CONF_DURATION_OFF, default=device.get(CONF_DURATION_OFF, 10)): vol.All(
                 vol.Coerce(int), vol.Range(min=0)
+            ),
+            vol.Optional(CONF_INVERT_SWITCH, default=device.get(CONF_INVERT_SWITCH, False)): bool,
+            vol.Optional("power_sensor_entity_id", default=device.get("power_sensor_entity_id", "")): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor"),
             ),
         }
     )
@@ -64,6 +82,7 @@ class PvoConfigFlow(config_entries.ConfigFlow):
         if user_input is not None:
             # Store the PV surplus sensor and move to the next step (device configuration).
             self.pvo_config[CONF_PV_SURPLUS_SENSOR] = user_input[CONF_PV_SURPLUS_SENSOR]
+            self.pvo_config[CONF_POLLING_FREQUENCY] = user_input[CONF_POLLING_FREQUENCY]
             return await self.async_step_device()
 
         schema = vol.Schema(
@@ -71,7 +90,10 @@ class PvoConfigFlow(config_entries.ConfigFlow):
                 # Ask the user to select the sensor that measures PV surplus power.
                 vol.Required(CONF_PV_SURPLUS_SENSOR): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor"),
-                )
+                ),
+                vol.Required(CONF_POLLING_FREQUENCY, default=60): vol.All(
+                    vol.Coerce(int), vol.Range(min=1)
+                ),
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema)
@@ -80,10 +102,8 @@ class PvoConfigFlow(config_entries.ConfigFlow):
         """Handle the device configuration step."""
         # This step is for adding the very first device during initial setup.
         if user_input is not None:
-            options = {CONF_DEVICES: [user_input]}
-            return self.async_create_entry(
-                title="PV Optimizer", data=self.pvo_config, options=options
-            )
+            self.pvo_config[CONF_DEVICES] = [user_input]
+            return self.async_create_entry(title="PV Optimizer", data=self.pvo_config)
 
         return self.async_show_form(
             step_id="device", data_schema=get_device_schema()
@@ -102,7 +122,7 @@ class PvoOptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry = config_entry
-        # Make a copy of the existing options to modify.
+        # Make a copy of the existing config to modify.
         self.options = dict(config_entry.options)
         self.device_index = None
 
@@ -116,7 +136,7 @@ class PvoOptionsFlowHandler(config_entries.OptionsFlow):
             return await self.async_step_edit_device()
 
         # Display the list of currently configured devices.
-        devices = self.options.get(CONF_DEVICES, [])
+        devices = self.config_entry.data.get(CONF_DEVICES, [])
         device_list = [f"{i}: {d['name']}" for i, d in enumerate(devices)]
 
         schema = vol.Schema(
@@ -133,9 +153,9 @@ class PvoOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_add_device(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Handle adding a new device."""
         if user_input is not None:
-            devices: List[Dict[str, Any]] = self.options.get(CONF_DEVICES, [])
+            devices: List[Dict[str, Any]] = self.config_entry.data.get(CONF_DEVICES, [])
             devices.append(user_input)
-            self.options[CONF_DEVICES] = devices
+            self.hass.config_entries.async_update_entry(self.config_entry, data={**self.config_entry.data, CONF_DEVICES: devices})
             return self.async_create_entry(title="", data=self.options)
 
         return self.async_show_form(
@@ -149,13 +169,13 @@ class PvoOptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_abort(reason="no_device_selected")
 
         device_index = int(self.device_index)
-        devices: List[Dict[str, Any]] = self.options.get(CONF_DEVICES, [])
+        devices: List[Dict[str, Any]] = self.config_entry.data.get(CONF_DEVICES, [])
         device_to_edit = devices[device_index]
 
         if user_input is not None:
             # Update the device configuration at the specified index.
             devices[device_index] = user_input
-            self.options[CONF_DEVICES] = devices
+            self.hass.config_entries.async_update_entry(self.config_entry, data={**self.config_entry.data, CONF_DEVICES: devices})
             return self.async_create_entry(title="", data=self.options)
 
         # Show the edit form, pre-filled with the existing device's data.
