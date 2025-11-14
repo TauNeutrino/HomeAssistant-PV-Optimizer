@@ -1,5 +1,5 @@
 """Binary sensor platform for PV Optimizer."""
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySensorEntityDescription
 from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import DeviceInfo
@@ -64,25 +64,25 @@ class PvoDeviceBinarySensor(CoordinatorEntity, BinarySensorEntity):
 class PvoDeviceIsOnSensor(PvoDeviceBinarySensor):
     """Representation of whether the appliance switch is physically on."""
     def __init__(self, coordinator, device_config, device_info):
+        self.entity_description = BinarySensorEntityDescription(key="is_on")
         super().__init__(coordinator, device_config, device_info)
         self._attr_name = f"PVO {self._device_name} Is On"
         self._attr_unique_id = f"pvo_{self._device_name.lower().replace(' ', '_')}_is_on"
-        self.entity_description.key = "is_on"
 
 
 class PvoDeviceIsLockedSensor(PvoDeviceBinarySensor):
     """Representation of whether the appliance is locked by min_on/off_time."""
     def __init__(self, coordinator, device_config, device_info):
+        self.entity_description = BinarySensorEntityDescription(key="is_locked")
         super().__init__(coordinator, device_config, device_info)
         self._attr_name = f"PVO {self._device_name} Is Locked"
         self._attr_unique_id = f"pvo_{self._device_name.lower().replace(' ', '_')}_is_locked"
-        self.entity_description.key = "is_locked"
 
 
 class PvoDeviceShouldBeOnSensor(PvoDeviceBinarySensor):
     """Representation of whether the appliance should be on according to the optimizer."""
     def __init__(self, coordinator, device_config, device_info):
+        self.entity_description = BinarySensorEntityDescription(key="should_be_on")
         super().__init__(coordinator, device_config, device_info)
         self._attr_name = f"PVO {self._device_name} Should Be On"
         self._attr_unique_id = f"pvo_{self._device_name.lower().replace(' ', '_')}_should_be_on"
-        self.entity_description.key = "should_be_on"

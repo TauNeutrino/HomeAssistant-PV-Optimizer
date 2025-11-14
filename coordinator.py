@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import timedelta, datetime
 from homeassistant.core import HomeAssistant, State
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, async_get_current_instance
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.entity import Entity # noqa: F401
 from . import const
 
@@ -24,6 +24,7 @@ class PVOptimizerDevice:
         self.duration_on = timedelta(minutes=config.get(const.CONF_DURATION_ON, const.DEFAULT_DURATION_ON))
         self.duration_off = timedelta(minutes=config.get(const.CONF_DURATION_OFF, const.DEFAULT_DURATION_OFF))
         self.invert_switch = config.get(const.CONF_INVERT_SWITCH, const.DEFAULT_INVERT_SWITCH)
+        self.is_automation_enabled = True  # Default to enabled
         
         self.is_on = False
         self.is_locked = False
@@ -172,7 +173,7 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
 
         # 4. Synchronization
         for device in self.devices:
-            if device.should_be_on and not device.is_on and not device.is_locked:
+            if device.is_automation_enabled and device.should_be_on and not device.is_on and not device.is_locked:
                 _LOGGER.info("Turning on %s", device.name)
                 await self.hass.services.async_call(
                     "switch",
@@ -180,7 +181,7 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
                     {"entity_id": device.switch_entity_id},
                     blocking=True
                 )
-            elif not device.should_be_on and device.is_on and not device.is_locked:
+            elif device.is_automation_enabled and not device.should_be_on and device.is_on and not device.is_locked:
                 _LOGGER.info("Turning off %s", device.name)
                 await self.hass.services.async_call(
                     "switch",

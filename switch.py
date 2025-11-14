@@ -20,25 +20,22 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class PvoDeviceSwitch(CoordinatorEntity, SwitchEntity):
     """Representation of a PVO-controlled device switch."""
 
-    def __init__(self, coordinator, device_info):
+    def __init__(self, coordinator, pvo_device):
         """Initialize the switch."""
         super().__init__(coordinator)
-        self.device_info = device_info
-        self._device_name = device_info.name
-        self._attr_name = f"PVO {self._device_name}"
+        self.pvo_device = pvo_device
+        self._device_name = pvo_device.name
         device_unique_id = f"pvo_device_{self._device_name.lower().replace(' ', '_')}"
         self._attr_device_info = DeviceInfo(
             identifiers={(const.DOMAIN, device_unique_id)},
             # The name attribute is not needed here as it will be inherited from the device.
             # name=f"PVO {self._device_name}",
-            # manufacturer="PV Optimizer",
-            # via_device=(const.DOMAIN, "controller"),
+            manufacturer="PV Optimizer",
+            via_device=(const.DOMAIN, "controller"),
         )
         # The switch itself should be for enabling/disabling automation
         self._attr_name = f"PVO {self._device_name} Automation"
-        self._attr_unique_id = f"pvo_{self._device_name.lower().replace(' ', '_')}"
-        # This switch will represent if the automation is enabled for this device
-        self._attr_is_on = True # Default to enabled
+        self._attr_unique_id = f"pvo_{self._device_name.lower().replace(' ', '_')}_automation"
 
     async def async_added_to_hass(self):
         """When entity is added to hass."""
@@ -50,15 +47,15 @@ class PvoDeviceSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self):
         """Return true if the switch is on."""
-        # Here you would manage the state of whether this device is managed
-        return self._attr_is_on
+        # The state is managed in the PVOptimizerDevice object
+        return self.pvo_device.is_automation_enabled
 
     async def async_turn_on(self, **kwargs):
         """Turn the entity on."""
-        self._attr_is_on = True
+        self.pvo_device.is_automation_enabled = True
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs):
         """Turn the entity off."""
-        self._attr_is_on = False
+        self.pvo_device.is_automation_enabled = False
         self.async_write_ha_state()

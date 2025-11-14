@@ -1,9 +1,9 @@
 """Sensor platform for PV Optimizer."""
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.const import STATE_UNAVAILABLE, UnitOfPower
+from homeassistant.const import UnitOfPower
 
 from .const import DOMAIN
 
@@ -74,7 +74,7 @@ class PvoSurplusSensor(PvoBaseSensor):
         """Return the state of the sensor."""
         if self.coordinator.data and "surplus_power" in self.coordinator.data:
             return self.coordinator.data["surplus_power"]
-        return STATE_UNAVAILABLE
+        return None
 
 
 class PvoPowerBudgetSensor(PvoBaseSensor):
@@ -94,7 +94,7 @@ class PvoPowerBudgetSensor(PvoBaseSensor):
         """Return the state of the sensor."""
         if self.coordinator.data and "power_budget" in self.coordinator.data:
             return self.coordinator.data["power_budget"]
-        return STATE_UNAVAILABLE
+        return None
 
 
 class PvoAddedPowerSensor(PvoBaseSensor):
@@ -114,7 +114,7 @@ class PvoAddedPowerSensor(PvoBaseSensor):
         """Return the state of the sensor."""
         if self.coordinator.data and "power_budget" in self.coordinator.data and "surplus_power" in self.coordinator.data:
             return self.coordinator.data["power_budget"] - self.coordinator.data["surplus_power"]
-        return STATE_UNAVAILABLE
+        return None
 
 
 class PvoDeviceSensor(PvoBaseSensor):
@@ -130,7 +130,7 @@ class PvoDeviceSensor(PvoBaseSensor):
         """Return the state of the sensor."""
         if self.coordinator.data and self._device_name in self.coordinator.data.get("devices", {}):
             return self.coordinator.data["devices"][self._device_name].get(self.entity_description.key)
-        return STATE_UNAVAILABLE
+        return None
 
 
 class PvoDevicePowerSensor(PvoDeviceSensor):
@@ -138,11 +138,13 @@ class PvoDevicePowerSensor(PvoDeviceSensor):
 
     def __init__(self, coordinator, device_config, device_info):
         """Initialize the sensor."""
+        self.entity_description = SensorEntityDescription(
+            key="power_consumption",
+            native_unit_of_measurement=UnitOfPower.WATT,
+        )
         super().__init__(coordinator, device_config, device_info)
         self._attr_name = f"PVO {self._device_name} Power"
         self._attr_unique_id = f"pvo_{self._device_name.lower().replace(' ', '_')}_power"
-        self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self.entity_description.key = "power_consumption"
 
 
 class PvoDevicePrioritySensor(PvoDeviceSensor):
@@ -150,7 +152,9 @@ class PvoDevicePrioritySensor(PvoDeviceSensor):
 
     def __init__(self, coordinator, device_config, device_info):
         """Initialize the sensor."""
+        self.entity_description = SensorEntityDescription(
+            key="priority",
+        )
         super().__init__(coordinator, device_config, device_info)
         self._attr_name = f"PVO {self._device_name} Priority"
         self._attr_unique_id = f"pvo_{self._device_name.lower().replace(' ', '_')}_priority"
-        self.entity_description.key = "priority"

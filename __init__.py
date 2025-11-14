@@ -1,7 +1,7 @@
 """The PV Optimizer integration."""
 import logging
 
-from homeassistant.config_entries import ConfigEntry, SOURCE_RELOAD
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.const import Platform, EVENT_HOMEASSISTANT_STARTED
 from homeassistant.helpers import device_registry as dr
@@ -25,9 +25,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     # Create a device for the PV Optimizer itself.
-    # Use hass.async_add_executor_job to ensure this synchronous operation does not block the event loop.
-    await hass.async_add_executor_job(
-        dr.async_get(hass).async_get_or_create,
+    device_registry = dr.async_get(hass)
+    device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, "controller")},
         name="PV Optimizer Controller",
