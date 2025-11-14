@@ -110,11 +110,6 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         # Create device instances
         self.devices = [PVOptimizerDevice(self.hass, device_config) for device_config in self._config.get(const.CONF_DEVICES, [])]
 
-        # Create entities for all platforms
-        from .switch import PvoDeviceSwitch
-        from .binary_sensor import PvoDeviceIsOnSensor, PvoDeviceIsLockedSensor, PvoDeviceShouldBeOnSensor
-        from .sensor import PvoDevicePowerSensor, PvoDevicePrioritySensor
-
         for callback in self._async_add_entities_callbacks:
             callback()
 

@@ -2,7 +2,7 @@
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.const import Platform, EVENT_HOMEASSISTANT_STARTED
 from homeassistant.helpers import device_registry as dr
 
@@ -20,7 +20,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Create the coordinator.
     coordinator = PVOptimizerCoordinator(hass, entry.data)
-    # The initial refresh is now fully deferred to the EVENT_HOMEASSISTANT_STARTED listener.
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
@@ -38,14 +37,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Forward the setup to the platforms.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Listen for Home Assistant startup event to perform initial refresh
-    @callback
-    async def _async_home_assistant_started(event):
-        """Handle Home Assistant started event."""
-        _LOGGER.debug("Home Assistant started, initializing PV Optimizer devices and performing first refresh.")
-        await coordinator.async_initialize_devices_and_refresh()
+    # Initialize devices and perform the first refresh.
+    await coordinator.async_initialize_devices_and_refresh()
 
-    entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _async_home_assistant_started))
     # Add a listener for option updates.
     entry.async_on_unload(entry.add_update_listener(async_update_listener))
 
