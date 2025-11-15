@@ -122,6 +122,17 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         """
         _LOGGER.debug("Starting PV Optimizer update cycle")
 
+        # On first run, check if all required entities are available.
+        # This prevents log spam during startup if entities are not yet ready.
+        if self.is_first_update:
+            all_entities_ready = True
+            for device in self.devices:
+                if self.hass.states.get(device.switch_entity_id) is None:
+                    _LOGGER.debug("Switch entity %s not yet available, deferring update", device.switch_entity_id)
+                    all_entities_ready = False
+            if not all_entities_ready:
+                return self.data # Return old data and wait for the next update
+
         # 1. Data Collection
         for device in self.devices:
             device.update_state()
