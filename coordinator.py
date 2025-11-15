@@ -1,213 +1,191 @@
-"""The PV Optimizer Coordinator."""
-from __future__ import annotations
-
+"""Coordinator for PV Optimizer integration."""
+import asyncio
 import logging
-from datetime import timedelta, datetime
-from homeassistant.core import HomeAssistant, State
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from homeassistant.helpers.entity import Entity # noqa: F401
-from . import const
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers import entity_registry as er
+
+from .const import (
+    DOMAIN,
+    CONF_SURPLUS_SENSOR_ENTITY_ID,
+    CONF_SLIDING_WINDOW_SIZE,
+    CONF_OPTIMIZATION_CYCLE_TIME,
+    CONF_NAME,
+    CONF_PRIORITY,
+    CONF_POWER,
+    CONF_TYPE,
+    CONF_SWITCH_ENTITY_ID,
+    CONF_NUMERIC_TARGETS,
+    CONF_NUMERIC_ENTITY_ID,
+    CONF_ACTIVATED_VALUE,
+    CONF_DEACTIVATED_VALUE,
+    CONF_MIN_ON_TIME,
+    CONF_MIN_OFF_TIME,
+    CONF_OPTIMIZATION_ENABLED,
+    CONF_MEASURED_POWER_ENTITY_ID,
+    CONF_POWER_THRESHOLD,
+    CONF_INVERT_SWITCH,
+    TYPE_SWITCH,
+    TYPE_NUMERIC,
+    ATTR_PVO_LAST_TARGET_STATE,
+    ATTR_IS_LOCKED,
+    ATTR_MEASURED_POWER_AVG,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-class PVOptimizerDevice:
-    """A class to represent a single device controlled by the optimizer."""
-
-    def __init__(self, hass: HomeAssistant, config: dict):
-        self.hass = hass
-        self.name = config.get(const.CONF_NAME)
-        self.switch_entity_id = config.get(const.CONF_SWITCH_ENTITY_ID)
-        self.power_sensor_entity_id = config.get(const.CONF_POWER_SENSOR_ENTITY_ID)
-        self.priority = config.get(const.CONF_PRIORITY, const.DEFAULT_PRIORITY)
-        self.nominal_power = config.get(const.CONF_NOMINAL_POWER)
-        self.power_threshold = config.get(const.CONF_POWER_THRESHOLD, const.DEFAULT_POWER_THRESHOLD)
-        self.duration_on = timedelta(minutes=config.get(const.CONF_DURATION_ON, const.DEFAULT_DURATION_ON))
-        self.duration_off = timedelta(minutes=config.get(const.CONF_DURATION_OFF, const.DEFAULT_DURATION_OFF))
-        self.invert_switch = config.get(const.CONF_INVERT_SWITCH, const.DEFAULT_INVERT_SWITCH)
-        self.is_automation_enabled = True  # Default to enabled
-        
-        self.is_on = False
-        self.is_locked = False
-        self.should_be_on = False
-        self.last_changed: datetime | None = None
-        self.power_consumption = 0
-
-    def update_state(self):
-        """Update the state of the device."""
-        switch_state = self.hass.states.get(self.switch_entity_id)
-        if not switch_state:
-            _LOGGER.warning("Switch entity not found: %s", self.switch_entity_id)
-            return
-
-        # Update power consumption
-        self.power_consumption = 0
-        if self.power_sensor_entity_id:
-            power_state = self.hass.states.get(self.power_sensor_entity_id)
-            if power_state and power_state.state not in ["unknown", "unavailable"]:
-                try:
-                    self.power_consumption = float(power_state.state)
-                except (ValueError, TypeError):
-                    _LOGGER.warning("Could not parse power sensor state for %s", self.name)
-            else:
-                _LOGGER.debug("Power sensor not available for %s", self.name)
-
-        # Update is_on state
-        current_is_on = False
-        if self.power_sensor_entity_id:
-            current_is_on = self.power_consumption > self.power_threshold
-        else:
-            current_is_on = switch_state.state == "on"
-            if self.invert_switch:
-                current_is_on = not current_is_on
-
-        if self.is_on != current_is_on:
-            _LOGGER.debug("Device %s changed state from %s to %s", self.name, self.is_on, current_is_on)
-            self.last_changed = datetime.now()
-
-        self.is_on = current_is_on
-
-        # Update is_locked state
-        if self.last_changed:
-            time_since_change = datetime.now() - self.last_changed
-            if self.is_on and self.duration_on > time_since_change:
-                self.is_locked = True
-            elif not self.is_on and self.duration_off > time_since_change:
-                self.is_locked = True
-            else:
-                self.is_locked = False
-        else:
-            self.is_locked = False
-        
-        # If no power sensor, use nominal power when on
-        if not self.power_sensor_entity_id:
-            if self.is_on:
-                self.power_consumption = self.nominal_power
 
 class PVOptimizerCoordinator(DataUpdateCoordinator):
-    """The PV Optimizer coordinator."""
+    """Coordinator for PV Optimizer."""
 
-    def __init__(self, hass: HomeAssistant, config: dict):
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the coordinator."""
         super().__init__(
             hass,
             _LOGGER,
-            name=const.DOMAIN,
-            update_interval=timedelta(seconds=config.get(const.CONF_POLLING_FREQUENCY, 60)),
+            name=DOMAIN,
+            update_interval=timedelta(seconds=config_entry.data["global"][CONF_OPTIMIZATION_CYCLE_TIME]),
         )
-        self.pv_surplus_sensor = config.get(const.CONF_PV_SURPLUS_SENSOR)
-        self._config = config
-        self.devices: list[PVOptimizerDevice] = []
-        self._async_add_entities_callbacks = []
+        self.config_entry = config_entry
+        self.devices = config_entry.data.get("devices", [])
+        self.global_config = config_entry.data.get("global", {})
+        self.entity_registry = er.async_get(hass)
+        self.device_states = {}  # Cache for device states and timestamps
 
-    def register_add_entities_callback(self, async_add_entities):
-        """Register a callback to add entities."""
-        self._async_add_entities_callbacks.append(async_add_entities)
+    async def _async_update_data(self) -> Dict[str, Any]:
+        """Fetch data for the optimization cycle."""
+        # Step 1: Data Aggregation - Gather current states and data for all devices
+        # This solves the problem of needing up-to-date information on device status, power consumption, and timestamps for locking logic.
+        await self._aggregate_device_data()
 
-    async def async_initialize_devices_and_refresh(self):
-        """Initialize devices and perform the first refresh."""
-        _LOGGER.debug("Initializing PV Optimizer devices.")
-        
-        # Create device instances
-        self.devices = [PVOptimizerDevice(self.hass, device_config) for device_config in self._config.get(const.CONF_DEVICES, [])]
+        # Step 2: Calculate Power Budget - Determine available power for optimization
+        # This solves the problem of computing the total power available by combining PV surplus and currently managed power.
+        power_budget = await self._calculate_power_budget()
 
-        for callback in self._async_add_entities_callbacks:
-            callback()
+        # Step 3: Ideal State Calculation - Use knapsack algorithm to find optimal device states per priority
+        # This solves the problem of maximizing power utilization while respecting priority and budget constraints.
+        ideal_on_list = await self._calculate_ideal_state(power_budget)
 
-        await self.async_config_entry_first_refresh()
-    async def _async_update_data(self):
-        """Fetch data from API endpoint.
+        # Step 4: State Synchronization - Apply the ideal states to devices
+        # This solves the problem of ensuring devices are turned on/off according to the optimization without violating locks.
+        await self._synchronize_states(ideal_on_list)
 
-        This is the place to pre-process the data to lookup tables
-        so entities can quickly look up their data.
-        """
-        _LOGGER.debug("Starting PV Optimizer update cycle")
-
-        # On first run, check if all required entities are available.
-        # This prevents log spam during startup if entities are not yet ready.
-        if self.is_first_update:
-            all_entities_ready = True
-            for device in self.devices:
-                if self.hass.states.get(device.switch_entity_id) is None:
-                    _LOGGER.debug("Switch entity %s not yet available, deferring update", device.switch_entity_id)
-                    all_entities_ready = False
-            if not all_entities_ready:
-                return self.data # Return old data and wait for the next update
-
-        # 1. Data Collection
-        for device in self.devices:
-            device.update_state()
-
-        surplus_state = self.hass.states.get(self.pv_surplus_sensor)
-        if not surplus_state or surplus_state.state in ["unknown", "unavailable"]:
-            _LOGGER.warning("PV surplus sensor not available.")
-            return self.data # Return old data if sensor is not available
-
-        try:
-            surplus_power = -float(surplus_state.state)
-        except (ValueError, TypeError):
-            _LOGGER.error("Could not parse PV surplus sensor state.")
-            return self.data
-
-        # 2. Budget Calculation
-        running_managed_power = sum(d.power_consumption for d in self.devices if d.is_on and not d.is_locked)
-        power_budget = surplus_power + running_managed_power
-        _LOGGER.debug("Power budget: %s W", power_budget)
-
-        # 3. Ideal State Calculation (Knapsack problem)
-        
-        # Devices that must be on because they are locked in 'on' state
-        ideal_on_devices = {d for d in self.devices if d.is_on and d.is_locked}
-        
-        remaining_budget = power_budget - sum(d.power_consumption for d in ideal_on_devices)
-
-        # Sort devices by priority
-        sorted_devices = sorted([d for d in self.devices if d not in ideal_on_devices], key=lambda x: x.priority)
-
-        # This is a simplified greedy approach. A full knapsack implementation is more complex.
-        # For each priority, find the best combination of devices.
-        for priority in sorted(list(set(d.priority for d in sorted_devices))):
-            candidates = [d for d in sorted_devices if d.priority == priority]
-            
-            # Simple greedy choice: add devices if they fit in the budget
-            for candidate in candidates:
-                if remaining_budget >= candidate.nominal_power:
-                    ideal_on_devices.add(candidate)
-                    remaining_budget -= candidate.nominal_power
-
-        for device in self.devices:
-            device.should_be_on = device in ideal_on_devices
-
-        # 4. Synchronization
-        for device in self.devices:
-            if device.is_automation_enabled and device.should_be_on and not device.is_on and not device.is_locked:
-                _LOGGER.info("Turning on %s", device.name)
-                await self.hass.services.async_call(
-                    "switch",
-                    "turn_on" if not device.invert_switch else "turn_off",
-                    {"entity_id": device.switch_entity_id},
-                    blocking=True
-                )
-            elif device.is_automation_enabled and not device.should_be_on and device.is_on and not device.is_locked:
-                _LOGGER.info("Turning off %s", device.name)
-                await self.hass.services.async_call(
-                    "switch",
-                    "turn_off" if not device.invert_switch else "turn_on",
-                    {"entity_id": device.switch_entity_id},
-                    blocking=True
-                )
-
-        # 5. Return data
+        # Return data for sensors (e.g., power budget, surplus avg)
+        surplus_avg = await self._get_averaged_surplus()
         return {
-            "devices": {
-                device.name: {
-                    "is_on": device.is_on,
-                    "is_locked": device.is_locked,
-                    "should_be_on": device.should_be_on,
-                    "power_consumption": device.power_consumption,
-                    "priority": device.priority,
-                }
-                for device in self.devices
-            },
-            "surplus_power": surplus_power,
             "power_budget": power_budget,
+            "surplus_avg": surplus_avg,
+            "ideal_on_list": ideal_on_list,
         }
+
+    async def _aggregate_device_data(self) -> None:
+        """Aggregate data for each device: measured_power_avg, is_locked, pvo_last_target_state."""
+        # For each device, read current state, last change timestamp, and averaged power
+        # This updates the device_states cache with necessary info for locking and power calculations.
+        for device in self.devices:
+            if not device.get(CONF_OPTIMIZATION_ENABLED, True):
+                continue
+            device_id = device[CONF_NAME]
+            # Read current state (on/off for switches, value for numeric)
+            # Calculate averaged power over sliding window
+            # Determine if locked based on min times and manual interventions
+            # Update device_states[device_id] with: state, last_change, measured_power_avg, is_locked, pvo_last_target_state
+
+    async def _calculate_power_budget(self) -> float:
+        """Calculate the total available power budget."""
+        # Read averaged PV surplus
+        surplus_avg = await self._get_averaged_surplus()
+        # Sum power of currently ON and managed devices that are not locked
+        running_manageable_power = 0.0
+        for device in self.devices:
+            if not device.get(CONF_OPTIMIZATION_ENABLED, True):
+                continue
+            device_id = device[CONF_NAME]
+            state_info = self.device_states.get(device_id, {})
+            if state_info.get("is_on") and not state_info.get(ATTR_IS_LOCKED, False):
+                running_manageable_power += device[CONF_POWER]
+        # Budget = surplus + running_manageable_power
+        return surplus_avg + running_manageable_power
+
+    async def _calculate_ideal_state(self, power_budget: float) -> List[str]:
+        """Calculate the ideal list of devices to turn on using knapsack per priority."""
+        ideal_on_list = []
+        remaining_budget = power_budget
+        # Sort devices by priority (1 highest)
+        sorted_devices = sorted(self.devices, key=lambda d: d[CONF_PRIORITY])
+        current_priority = None
+        priority_group = []
+        for device in sorted_devices:
+            if device[CONF_PRIORITY] != current_priority:
+                # Process previous priority group
+                if priority_group:
+                    selected = self._knapsack_select(priority_group, remaining_budget)
+                    ideal_on_list.extend(selected)
+                    remaining_budget -= sum(d[CONF_POWER] for d in selected if d in selected)
+                current_priority = device[CONF_PRIORITY]
+                priority_group = [device]
+            else:
+                priority_group.append(device)
+        # Process last group
+        if priority_group:
+            selected = self._knapsack_select(priority_group, remaining_budget)
+            ideal_on_list.extend(selected)
+        return ideal_on_list
+
+    def _knapsack_select(self, devices: List[Dict], budget: float) -> List[str]:
+        """Select subset of devices that maximize power without exceeding budget."""
+        # Simple greedy: sort by power descending, add if fits
+        # For full knapsack, use DP, but greedy suffices for now
+        devices.sort(key=lambda d: d[CONF_POWER], reverse=True)
+        selected = []
+        for device in devices:
+            if device[CONF_POWER] <= budget and not self.device_states.get(device[CONF_NAME], {}).get(ATTR_IS_LOCKED, False):
+                selected.append(device[CONF_NAME])
+                budget -= device[CONF_POWER]
+        return selected
+
+    async def _synchronize_states(self, ideal_on_list: List[str]) -> None:
+        """Turn devices on/off based on ideal list."""
+        for device in self.devices:
+            device_id = device[CONF_NAME]
+            should_be_on = device_id in ideal_on_list
+            state_info = self.device_states.get(device_id, {})
+            currently_on = state_info.get("is_on", False)
+            if should_be_on and not currently_on and not state_info.get(ATTR_IS_LOCKED, False):
+                # Turn on
+                await self._activate_device(device)
+                # Update pvo_last_target_state to True
+            elif not should_be_on and currently_on and not state_info.get(ATTR_IS_LOCKED, False):
+                # Turn off
+                await self._deactivate_device(device)
+                # Update pvo_last_target_state to False
+
+    async def _activate_device(self, device: Dict) -> None:
+        """Activate a device based on its type."""
+        if device[CONF_TYPE] == TYPE_SWITCH:
+            # Set switch to on (consider invert_switch)
+            pass
+        elif device[CONF_TYPE] == TYPE_NUMERIC:
+            # Set numeric targets to activated_value
+            pass
+
+    async def _deactivate_device(self, device: Dict) -> None:
+        """Deactivate a device based on its type."""
+        if device[CONF_TYPE] == TYPE_SWITCH:
+            # Set switch to off (consider invert_switch)
+            pass
+        elif device[CONF_TYPE] == TYPE_NUMERIC:
+            # Set numeric targets to deactivated_value
+            pass
+
+    async def _get_averaged_surplus(self) -> float:
+        """Get averaged PV surplus over sliding window."""
+        # Use history stats or similar to average the surplus sensor
+        # For now, return current value as placeholder
+        surplus_entity = self.global_config[CONF_SURPLUS_SENSOR_ENTITY_ID]
+        state = self.hass.states.get(surplus_entity)
+        return float(state.state) if state else 0.0

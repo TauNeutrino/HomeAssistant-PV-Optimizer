@@ -1,11 +1,12 @@
 {
   "domain": "pv_optimizer",
-  "name": "PV Überschuss Optimizer",
-  "codeowners": [],
+  "name": "PV Optimizer",
+  "codeowners": ["@your_username"],
   "config_flow": true,
-  "documentation": "https://github.com/your_github_username/pvo-optimizer",
+  "documentation": "https://github.com/your_repo/pv_optimizer",
+  "integration_type": "device",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/your_github_username/pvo-optimizer/issues",
+  "issue_tracker": "https://github.com/your_repo/pv_optimizer/issues",
   "requirements": [],
-  "version": "1.0.0"
+  "version": "0.1.0"
 }

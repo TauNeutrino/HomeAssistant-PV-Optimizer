@@ -1,160 +1,94 @@
-"""Sensor platform for PV Optimizer."""
-from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
-from homeassistant.core import callback
+"""Sensors for PV Optimizer integration."""
+import logging
+from typing import Any, Dict, Optional
+
+from homeassistant.components.sensor import SensorEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.const import UnitOfPower
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    CONF_NAME,
+    ATTR_IS_LOCKED,
+    ATTR_MEASURED_POWER_AVG,
+)
+from .coordinator import PVOptimizerCoordinator
 
-
-async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up the sensor platform."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]
-
-    @callback
-    def _add_sensors():
-        # This is the main controller device
-        controller_device_info = DeviceInfo(
-            identifiers={(DOMAIN, "controller")},
-            name="PV Optimizer Controller",
-            manufacturer="PV Optimizer",
-            model="Controller",
-        )
-
-        sensors = [
-            PvoSurplusSensor(coordinator, controller_device_info),
-            PvoPowerBudgetSensor(coordinator, controller_device_info),
-            PvoAddedPowerSensor(coordinator, controller_device_info),
-        ]
-
-        for device_config in coordinator.devices:
-            device_name = device_config.name
-            device_unique_id = f"pvo_device_{device_name.lower().replace(' ', '_')}"
-
-            # Each appliance gets its own device entry
-            appliance_device_info = DeviceInfo(
-                identifiers={(DOMAIN, device_unique_id)},
-                name=f"PVO {device_name}",
-                manufacturer="PV Optimizer",
-                model="Managed Load",
-                via_device=(DOMAIN, "controller"), # Linked to the main controller
-            )
-
-            sensors.extend([
-                PvoDevicePowerSensor(coordinator, device_config, appliance_device_info),
-                PvoDevicePrioritySensor(coordinator, device_config, appliance_device_info),
-            ])
-        async_add_entities(sensors)
-    coordinator.register_add_entities_callback(_add_sensors)
+_LOGGER = logging.getLogger(__name__)
 
 
-class PvoBaseSensor(CoordinatorEntity, SensorEntity):
-    """Base class for PV Optimizer sensors."""
+async def async_setup_entry(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up sensors for PV Optimizer."""
+    coordinator: PVOptimizerCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
-    def __init__(self, coordinator):
+    entities = []
+
+    # Controller sensors
+    entities.append(PVOptimizerControllerSensor(coordinator, "power_budget", "Power Budget", "W"))
+    entities.append(PVOptimizerControllerSensor(coordinator, "surplus_avg", "Averaged Surplus", "W"))
+
+    # Appliance sensors
+    for device in coordinator.devices:
+        device_name = device[CONF_NAME]
+        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, "is_locked", "Locked", None))
+        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, "measured_power_avg", "Measured Power Avg", "W"))
+
+    async_add_entities(entities)
+
+
+class PVOptimizerControllerSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for PV Optimizer controller."""
+
+    def __init__(self, coordinator: PVOptimizerCoordinator, data_key: str, name: str, unit: Optional[str]) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-
-
-class PvoSurplusSensor(PvoBaseSensor):
-    """Representation of the PV Surplus Sensor."""
-
-    def __init__(self, coordinator, device_info):
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._attr_device_info = device_info
-        self._attr_name = "PV Optimizer Surplus"
-        self._attr_unique_id = "pvo_surplus_power"
-        self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self._attr_icon = "mdi:solar-power"
+        self._data_key = data_key
+        self._attr_name = f"PV Optimizer {name}"
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{data_key}"
+        self._attr_unit_of_measurement = unit
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, coordinator.config_entry.entry_id)},
+            "name": "PV Optimizer Controller",
+            "manufacturer": "Custom",
+            "model": "PV Optimizer",
+        }
 
     @property
-    def native_value(self):
+    def state(self) -> Any:
         """Return the state of the sensor."""
-        if self.coordinator.data and "surplus_power" in self.coordinator.data:
-            return self.coordinator.data["surplus_power"]
-        return None
+        return self.coordinator.data.get(self._data_key, 0)
 
 
-class PvoPowerBudgetSensor(PvoBaseSensor):
-    """Representation of the Power Budget Sensor."""
+class PVOptimizerApplianceSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for PV Optimizer appliance."""
 
-    def __init__(self, coordinator, device_info):
+    def __init__(self, coordinator: PVOptimizerCoordinator, device_name: str, data_key: str, name: str, unit: Optional[str]) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_device_info = device_info
-        self._attr_name = "PV Optimizer Power Budget"
-        self._attr_unique_id = "pvo_power_budget"
-        self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self._attr_icon = "mdi:calculator"
+        self._device_name = device_name
+        self._data_key = data_key
+        self._attr_name = f"PVO {device_name} {name}"
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_{data_key}"
+        self._attr_unit_of_measurement = unit
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{device_name}")},
+            "name": f"PVO {device_name}",
+            "manufacturer": "Custom",
+            "model": "PV Appliance",
+        }
 
     @property
-    def native_value(self):
+    def state(self) -> Any:
         """Return the state of the sensor."""
-        if self.coordinator.data and "power_budget" in self.coordinator.data:
-            return self.coordinator.data["power_budget"]
+        device_data = self.coordinator.device_states.get(self._device_name, {})
+        if self._data_key == "is_locked":
+            return device_data.get(ATTR_IS_LOCKED, False)
+        elif self._data_key == "measured_power_avg":
+            return device_data.get(ATTR_MEASURED_POWER_AVG, 0)
         return None
-
-
-class PvoAddedPowerSensor(PvoBaseSensor):
-    """Representation of the Added Power Sensor."""
-
-    def __init__(self, coordinator, device_info):
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._attr_device_info = device_info
-        self._attr_name = "PV Optimizer Added Power"
-        self._attr_unique_id = "pvo_added_power"
-        self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self._attr_icon = "mdi:power-plug"
-
-    @property
-    def native_value(self):
-        """Return the state of the sensor."""
-        if self.coordinator.data and "power_budget" in self.coordinator.data and "surplus_power" in self.coordinator.data:
-            return self.coordinator.data["power_budget"] - self.coordinator.data["surplus_power"]
-        return None
-
-
-class PvoDeviceSensor(PvoBaseSensor):
-    """Base class for appliance-specific sensors."""
-    def __init__(self, coordinator, device_config, device_info):
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._attr_device_info = device_info
-        self._device_name = device_config.name
-
-    @property
-    def native_value(self):
-        """Return the state of the sensor."""
-        if self.coordinator.data and self._device_name in self.coordinator.data.get("devices", {}):
-            return self.coordinator.data["devices"][self._device_name].get(self.entity_description.key)
-        return None
-
-
-class PvoDevicePowerSensor(PvoDeviceSensor):
-    """Representation of a PVO-controlled device's power sensor."""
-
-    def __init__(self, coordinator, device_config, device_info):
-        """Initialize the sensor."""
-        self.entity_description = SensorEntityDescription(
-            key="power_consumption",
-            native_unit_of_measurement=UnitOfPower.WATT,
-        )
-        super().__init__(coordinator, device_config, device_info)
-        self._attr_name = f"PVO {self._device_name} Power"
-        self._attr_unique_id = f"pvo_{self._device_name.lower().replace(' ', '_')}_power"
-
-
-class PvoDevicePrioritySensor(PvoDeviceSensor):
-    """Representation of a PVO-controlled device's priority sensor."""
-
-    def __init__(self, coordinator, device_config, device_info):
-        """Initialize the sensor."""
-        self.entity_description = SensorEntityDescription(
-            key="priority",
-        )
-        super().__init__(coordinator, device_config, device_info)
-        self._attr_name = f"PVO {self._device_name} Priority"
-        self._attr_unique_id = f"pvo_{self._device_name.lower().replace(' ', '_')}_priority"

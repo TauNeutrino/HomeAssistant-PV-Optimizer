@@ -1,45 +1,33 @@
-"""Constants for the PV Optimizer integration."""
-
-# The domain of the integration, used as a unique identifier in Home Assistant.
+"""Constants for PV Optimizer integration."""
 DOMAIN = "pv_optimizer"
-# Configuration keys
-CONF_DEVICES = "devices"
-CONF_PV_SURPLUS_SENSOR = "pv_surplus_sensor"
-CONF_POLLING_FREQUENCY = "polling_frequency"
 
-# Device configuration keys
+# Global config keys
+CONF_SURPLUS_SENSOR_ENTITY_ID = "surplus_sensor_entity_id"
+CONF_SLIDING_WINDOW_SIZE = "sliding_window_size"
+CONF_OPTIMIZATION_CYCLE_TIME = "optimization_cycle_time"
+
+# Device config keys
 CONF_NAME = "name"
-CONF_NOMINAL_POWER = "nominal_power"
-CONF_SWITCH_ENTITY_ID = "switch_entity_id"
-CONF_POWER_SENSOR_ENTITY_ID = "power_sensor_entity_id"
 CONF_PRIORITY = "priority"
+CONF_POWER = "power"
+CONF_TYPE = "type"
+CONF_SWITCH_ENTITY_ID = "switch_entity_id"
+CONF_NUMERIC_TARGETS = "numeric_targets"
+CONF_NUMERIC_ENTITY_ID = "numeric_entity_id"
+CONF_ACTIVATED_VALUE = "activated_value"
+CONF_DEACTIVATED_VALUE = "deactivated_value"
+CONF_MIN_ON_TIME = "min_on_time"
+CONF_MIN_OFF_TIME = "min_off_time"
+CONF_OPTIMIZATION_ENABLED = "optimization_enabled"
+CONF_MEASURED_POWER_ENTITY_ID = "measured_power_entity_id"
 CONF_POWER_THRESHOLD = "power_threshold"
-CONF_DURATION_ON = "duration_on"
-CONF_DURATION_OFF = "duration_off"
 CONF_INVERT_SWITCH = "invert_switch"
-CONF_NUMERIC_PARAMETERS = "numeric_parameters"
 
-# Default values for device configuration
-DEFAULT_PRIORITY = 10
-DEFAULT_POWER_THRESHOLD = 100
-DEFAULT_DURATION_ON = 10
-DEFAULT_DURATION_OFF = 10
-DEFAULT_INVERT_SWITCH = False
-DEFAULT_NUMERIC_PARAMETERS = False
+# Device types
+TYPE_SWITCH = "switch"
+TYPE_NUMERIC = "numeric"
 
-# Attributes
-ATTR_STATUS = "status"
-ATTR_POWER_CONSUMPTION = "power_consumption"
-ATTR_PRIORITY = "priority"
-ATTR_IS_ON = "is_on"
-
-# Services
-SERVICE_ACTIVATE = "activate"
-SERVICE_DEACTIVATE = "deactivate"
-SERVICE_SET_PRIORITY = "set_priority"
-
-# PVO Device States
-PVO_STATE_IDLE = "idle"
-PVO_STATE_ACTIVE = "active"
-PVO_STATE_WAITING_FOR_DURATION = "waiting_for_duration"
-PVO_STATE_DISABLED = "disabled"
+# Internal attributes
+ATTR_PVO_LAST_TARGET_STATE = "pvo_last_target_state"
+ATTR_IS_LOCKED = "is_locked"
+ATTR_MEASURED_POWER_AVG = "measured_power_avg"
