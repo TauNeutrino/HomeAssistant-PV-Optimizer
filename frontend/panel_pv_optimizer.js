@@ -26,24 +26,15 @@ class PvOptimizerPanel extends LitElement {
 
           <div class="stat-grid">
             <div class="stat-item">
-              <span class="stat-title">PV Power</span>
+              <span class="stat-title">Power Budget</span>
               <span class="stat-value">
-                ${this._getSensorState("sensor.pv_optimizer_pv_power", "W")}
+                ${this._getSensorState("sensor.pv_optimizer_power_budget", "W")}
               </span>
             </div>
             <div class="stat-item">
-              <span class="stat-title">Grid Power</span>
+              <span class="stat-title">Averaged Surplus</span>
               <span class="stat-value">
-                ${this._getSensorState("sensor.pv_optimizer_grid_power", "W")}
-              </span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-title">Available Power</span>
-              <span class="stat-value">
-                ${this._getSensorState(
-                  "sensor.pv_optimizer_available_power",
-                  "W"
-                )}
+                ${this._getSensorState("sensor.pv_optimizer_averaged_surplus", "W")}
               </span>
             </div>
           </div>
