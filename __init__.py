@@ -6,6 +6,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.components import panel_custom
 
 from .const import DOMAIN
 from .coordinator import PVOptimizerCoordinator
@@ -17,8 +18,30 @@ PLATFORMS = ["sensor", "switch", "number"]
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Set up the PV Optimizer integration."""
-    # Frontend panel is registered via manifest.json
+    # Register frontend panel programmatically for HA 2025.10
+    await _register_frontend_panel(hass)
     return True
+
+
+async def _register_frontend_panel(hass: HomeAssistant) -> None:
+    """Register the PV Optimizer frontend panel using modern HA 2025.10 approach."""
+    try:
+        await panel_custom.async_register_panel(
+            hass,
+            frontend_url_path="pv_optimizer",
+            webcomponent_name="pv-optimizer-panel",
+            sidebar_title="PV Optimizer",
+            sidebar_icon="mdi:solar-panel",
+            config={
+                "js_url": "/local/pv_optimizer/panel.js",
+                "css_url": None,
+                "embed_iframe": False,
+                "trust_external_script": False,
+            },
+        )
+        _LOGGER.info("PV Optimizer frontend panel registered successfully")
+    except Exception as e:
+        _LOGGER.error(f"Failed to register PV Optimizer frontend panel: {e}")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
