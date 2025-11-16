@@ -2,6 +2,7 @@
   "domain": "pv_optimizer",
   "name": "PV Optimizer",
   "config_flow": true,
+  "version": "0.1.0",
   "frontend": {
     "entrypoint": "/local/pv_optimizer/panel.js",
     "sidebar": {
