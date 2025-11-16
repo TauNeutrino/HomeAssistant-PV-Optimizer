@@ -16,37 +16,41 @@ The primary objective is to maximize the use of self-generated solar energy by a
 
 ## 3. System & Device Configuration
 
-The system must be configurable through the Home Assistant graphical user interface (Config Flow).
+The system is configured entirely through a dedicated **PV Optimizer** panel in the Home Assistant sidebar. This UI-driven approach allows for dynamic and real-time configuration without needing to restart Home Assistant or re-run a configuration flow.
+
+When the integration is first added, it will automatically be ready to use. The configuration panel is the single place for all settings.
 
 ### 3.1. General Configuration
 
-**`surplus_sensor_entity_id`**: A global setting must define the primary sensor entity that provides the PV surplus value. But this system should use a time-averaged (sliding window) value of this sensor to smooth out brief fluctuations. 
+The main view of the PV Optimizer panel allows you to set the global parameters for the optimizer:
 
-**`sliding_window_size`**: The sliding window size shall be configurable (# of minutes)
+-   **`surplus_sensor_entity_id`**: The primary sensor entity that provides the PV surplus value. The system uses a time-averaged (sliding window) value of this sensor to smooth out brief fluctuations.
+-   **`sliding_window_size`**: The size of the sliding window in minutes for averaging the surplus power.
+-   **`optimization_cycle_time`**: The frequency in seconds at which the optimization algorithm runs.
 
-**`optimization_cycle_time`**: A second global setting has to define the optimization cycle (# of seconds) that provides the running frequency of the algorithms.
+### 3.2. Device Management
 
-### 3.2. Device Configuration
+The panel provides a user-friendly interface to add, edit, and remove controllable devices. Each device has the following configuration parameters:
 
-The UI must allow users to add, edit, and remove controllable devices. Each device has the following configuration parameters:
+-   **`name`**: A human-readable name for the device (e.g., "Hot water optimization").
+-   **`priority`**: A numerical value indicating its activation priority (e.g., 1-10, where 1 is the highest).
+-   **`power`**: The nominal power consumption of the device in Watts. This is used for budget calculations.
+-   **`type`**: The control mechanism for the device. This determines which other parameters are required.
+    -   If `type` is **`switch`**:
+        -   **`switch_entity_id`**: The entity ID of the switch to be controlled.
+    -   If `type` is **`numeric`**:
+        -   **`numeric_targets`**: A list of objects, where each object defines an entity to control and its target values. Each object must contain:
+            -   `numeric_entity_id`: The entity ID of the number or input_number to be set.
+            -   `activated_value`: The value to set when the device is activated by the optimizer.
+            -   `deactivated_value`: The value to set when the device is deactivated.
+-   **`min_on_time`** (optional): The minimum duration (in minutes) the device must remain on after being activated, to prevent short-cycling.
+-   **`min_off_time`** (optional): The minimum duration (in minutes) the device must remain off after being deactivated, to prevent short-cycling.
+-   **`optimization_enabled`**: A master boolean flag to determine if the device should be considered by the optimizer at all.
+-   `measured_power_entity_id`: A sensor that provides the real-time power consumption of the device.
+-   **`power_threshold`** (optional): A threshold in Watts, used with `power_sensor_entity_id`. If the measured power is above this threshold, the device is considered "ON". Defaults to 100W.
+-   **`invert_switch`** (optional): A boolean flag. If `true`, the system will turn the switch `off` to activate the device and `on` to deactivate it.
 
-- **`name`**: A human-readable name for the device (e.g., "Hot water optimization").
-- **`priority`**: A numerical value indicating its activation priority (e.g., 1-10, where 1 is the highest).
-- **`power`**: The nominal power consumption of the device in Watts. This can be used for budget calculations.
-- **`type`**: The control mechanism for the device. This determines which other parameters are required.
-    - If `type` is **`switch`**:
-        - **`switch_entity_id`**: The entity ID of the switch to be controlled.
-    - If `type` is **`numeric`**:
-        - **`numeric_targets`**: A list of objects, where each object defines an entity to control and its target values. Each object must contain:
-            - `numeric_entity_id`: The entity ID of the number or input_number to be set.
-            - `activated_value`: The value to set when the device is activated by the optimizer.
-            - `deactivated_value`: The value to set when the device is deactivated.
-- **`min_on_time`** (optional): The minimum duration (in minutes) the device must remain on after being activated, to prevent short-cycling.
-- **`min_off_time`** (optional): The minimum duration (in minutes) the device must remain off after being deactivated, to prevent short-cycling.
-- **`optimization_enabled`**: A master boolean flag to determine if the device should be considered by the optimizer at all.
-- `measured_power_entity_id`: A sensor that provides the real-time power consumption of the device.
- - **`power_threshold`** (optional): A threshold in Watts, used with `power_sensor_entity_id`. If the measured power is above this threshold, the device is considered "ON". Defaults to 100W.
-- **`invert_switch`** (optional): A boolean flag. If `true`, the system will turn the switch `off` to activate the device and `on` to deactivate it.
+Internally, the system will use a class-based approach, with a base class for all devices and specialized subclasses for `switch` and `numeric` types to ensure clean and maintainable logic.
 
 ## 4. Functional Requirements (Core Logic)
 
@@ -56,6 +60,7 @@ The core logic runs in a loop triggered at the `optimization_cycle_time` frequen
 
 - At the start of each cycle, the system must discover and load the configuration for all `automation_enabled` devices.
 - It must read the current state (on/off) of each device and the timestamp of its last change.
+- It must read the current values of the dynamic configuration entities (see section 5.3) for each device.
 
 #### 4.2. Device Data
 
@@ -116,6 +121,17 @@ The integration shall create a clear entity model in Home Assistant for monitori
 A central "PV Optimizer Controller" device shall be created to group global sensors.
 
 
-### 5.2. Appliance Devices
-For each configured appliance, a dedicated device (e.g., "PVO Hot Water Heater") shall be created, linked to the controller. Each appliance device will have the following entities:
+### 5.2. Appliance Monitoring Entities
+For each configured appliance, a dedicated device (e.g., "PVO Hot Water Heater") shall be created, linked to the controller. Each appliance device will have the following entities for **monitoring**:
+- A sensor for its locked status.
+- A sensor for its measured power.
+- A sensor for the last target state set by the optimizer.
+- A sensor indicating its current contribution to the power budget.
 
+### 5.3. Dynamic Configuration Entities
+To allow for real-time adjustments from the UI, the following parameters will be exposed as entities on each appliance's device card. The optimizer will use the current state of these entities for its calculations, overriding the initial values set in the configuration flow.
+
+- **`Priority`**: A `number` entity to dynamically change the device's priority.
+- **`Optimization Enabled`**: A `switch` entity to enable or disable the device from being considered by the optimizer.
+- **`Minimum On Time`**: A `number` entity to adjust the `min_on_time`.
+- **`Minimum Off Time`**: A `number` entity to adjust the `min_off_time`.
