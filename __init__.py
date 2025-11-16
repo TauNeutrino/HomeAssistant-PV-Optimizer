@@ -17,23 +17,14 @@ PLATFORMS = ["sensor", "switch", "number"]
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Set up the PV Optimizer integration."""
-    # Register the frontend panel
-    hass.http.async_register_static_paths([
+    # Register the frontend static path
+    await hass.http.async_register_static_paths([
         {
             "url_path": "/pv_optimizer",
             "path": hass.config.path("custom_components/pv_optimizer/www"),
             "cache_headers": False,
         }
     ])
-
-    # Register the panel in the sidebar
-    hass.components.frontend.async_register_built_in_panel(
-        "pv_optimizer",
-        "PV Optimizer",
-        "mdi:solar-power",
-        "pv_optimizer",
-        config={"url_path": "pv_optimizer"},
-    )
 
     return True
 
