@@ -2,12 +2,6 @@
   "domain": "pv_optimizer",
   "name": "PV Optimizer",
   "config_flow": true,
-  "documentation": "https://github.com/your_repo/pv_optimizer",
-  "integration_type": "device",
-  "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/your_repo/pv_optimizer/issues",
-  "requirements": [],
-  "version": "0.1.0",
   "frontend": {
     "entrypoint": "/local/pv_optimizer/panel.js",
     "sidebar": {
