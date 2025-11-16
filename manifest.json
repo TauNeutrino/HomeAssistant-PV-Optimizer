@@ -1,7 +1,6 @@
 {
   "domain": "pv_optimizer",
   "name": "PV Optimizer",
-  "codeowners": ["@your_username"],
   "config_flow": true,
   "documentation": "https://github.com/your_repo/pv_optimizer",
   "integration_type": "device",
