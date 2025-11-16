@@ -18,34 +18,10 @@ PLATFORMS = ["sensor", "switch", "number"]
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Set up the PV Optimizer integration."""
-    # Register frontend panel
-    await _register_panel(hass)
-    
     # Register services
     await async_register_services(hass)
     
     return True
-
-
-async def _register_panel(hass: HomeAssistant) -> None:
-    """Register the PV Optimizer frontend panel."""
-    try:
-        # Register the panel with Home Assistant
-        await hass.components.frontend.async_register_panel(
-            webcomponent_name="pv-optimizer-panel",
-            frontend_url_path="pv_optimizer",
-            js_url="/hacsfiles/pv_optimizer/panel_pv_optimizer.js",
-            config={
-                "title": "PV Optimizer",
-                "icon": "mdi:solar-power",
-                "show_in_sidebar": True,
-                "require_admin": False,
-            },
-        )
-        _LOGGER.info("PV Optimizer frontend panel registered successfully")
-    except Exception as e:
-        _LOGGER.error(f"Failed to register PV Optimizer frontend panel: {e}")
-        raise
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -62,6 +38,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Register update listener for config changes
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+
+    # Register frontend panel during config entry setup (when user adds integration)
+    try:
+        from homeassistant.components.frontend import HomeAssistantFrontend
+        
+        frontend: HomeAssistantFrontend = hass.components.frontend
+        await frontend.async_register_panel(
+            hass,
+            webcomponent_name="pv-optimizer-panel",
+            frontend_url_path="pv_optimizer",
+            js_url="/hacsfiles/pv_optimizer/panel_pv_optimizer.js",
+            config={
+                "title": "PV Optimizer",
+                "icon": "mdi:solar-power",
+                "show_in_sidebar": True,
+                "require_admin": False,
+            },
+        )
+        _LOGGER.info("PV Optimizer frontend panel registered successfully")
+    except Exception as e:
+        _LOGGER.warning(f"Could not register frontend panel (this is OK if running HA < 2023.8): {e}")
 
     return True
 
