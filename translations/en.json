@@ -26,6 +26,13 @@
           "invert_switch": "Invert Switch Logic"
         }
       },
+      "add_devices": {
+        "title": "Add Devices",
+        "description": "Do you want to add devices now?",
+        "data": {
+          "add_devices": "Add devices"
+        }
+      },
       "add_another": {
         "title": "Add Another Device",
         "description": "Do you want to add another device?",

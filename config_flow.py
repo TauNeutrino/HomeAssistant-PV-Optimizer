@@ -110,11 +110,33 @@ class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         if user_input is not None:
             self.global_config = user_input
-            return await self.async_step_device()
+            return await self.async_step_add_devices()
 
         return self.async_show_form(
             step_id="user",
             data_schema=GLOBAL_CONFIG_SCHEMA,
+        )
+
+    async def async_step_add_devices(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Ask if user wants to add devices."""
+        if user_input is not None:
+            if user_input.get("add_devices", False):
+                return await self.async_step_device()
+            else:
+                # Create the config entry without devices
+                return self.async_create_entry(
+                    title="PV Optimizer",
+                    data={
+                        "global": self.global_config,
+                        "devices": [],
+                    },
+                )
+
+        return self.async_show_form(
+            step_id="add_devices",
+            data_schema=vol.Schema({
+                vol.Optional("add_devices", default=False): bool,
+            }),
         )
 
     async def async_step_device(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
