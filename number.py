@@ -113,7 +113,7 @@ class PVOptimizerPriorityNumber(CoordinatorEntity, NumberEntity):
         }
 
     @property
-    def value(self) -> float:
+    def native_value(self) -> float:
         """Return the current priority value."""
         # This solves the problem of reading the current priority from device config
         for device in self.coordinator.devices:
@@ -121,7 +121,7 @@ class PVOptimizerPriorityNumber(CoordinatorEntity, NumberEntity):
                 return device.get(CONF_PRIORITY, 5)
         return 5  # Default
 
-    async def async_set_value(self, value: float) -> None:
+    async def async_set_native_value(self, value: float) -> None:
         """Set the priority value."""
         # This solves the problem of dynamically updating device priority
         for i, device in enumerate(self.coordinator.devices):
@@ -156,14 +156,14 @@ class PVOptimizerMinOnTimeNumber(CoordinatorEntity, NumberEntity):
         }
 
     @property
-    def value(self) -> float:
+    def native_value(self) -> float:
         """Return the current min on time value."""
         for device in self.coordinator.devices:
             if device[CONF_NAME] == self._device_name:
                 return device.get(CONF_MIN_ON_TIME, 0)
         return 0
 
-    async def async_set_value(self, value: float) -> None:
+    async def async_set_native_value(self, value: float) -> None:
         """Set the min on time value."""
         for i, device in enumerate(self.coordinator.devices):
             if device[CONF_NAME] == self._device_name:
@@ -196,14 +196,14 @@ class PVOptimizerMinOffTimeNumber(CoordinatorEntity, NumberEntity):
         }
 
     @property
-    def value(self) -> float:
+    def native_value(self) -> float:
         """Return the current min off time value."""
         for device in self.coordinator.devices:
             if device[CONF_NAME] == self._device_name:
                 return device.get(CONF_MIN_OFF_TIME, 0)
         return 0
 
-    async def async_set_value(self, value: float) -> None:
+    async def async_set_native_value(self, value: float) -> None:
         """Set the min off time value."""
         for i, device in enumerate(self.coordinator.devices):
             if device[CONF_NAME] == self._device_name:
