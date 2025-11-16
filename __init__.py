@@ -15,6 +15,27 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["sensor", "switch", "number"]
 
 
+async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
+    """Set up the PV Optimizer integration."""
+    # Register the frontend panel
+    hass.http.register_static_path(
+        "/pv_optimizer",
+        hass.config.path("custom_components/pv_optimizer/www"),
+        cache_headers=False,
+    )
+
+    # Register the panel in the sidebar
+    hass.components.frontend.async_register_built_in_panel(
+        "pv_optimizer",
+        "PV Optimizer",
+        "mdi:solar-power",
+        "pv_optimizer",
+        config={"url_path": "pv_optimizer"},
+    )
+
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up PV Optimizer from a config entry."""
     # Initialize the coordinator for handling optimization cycles

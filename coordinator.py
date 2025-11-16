@@ -8,6 +8,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import entity_registry as er
+from homeassistant.components.recorder import get_instance
+from homeassistant.components.recorder.history import get_significant_states
+from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
@@ -35,6 +38,7 @@ from .const import (
     ATTR_IS_LOCKED,
     ATTR_MEASURED_POWER_AVG,
 )
+from .device import create_device, PVDevice
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +59,7 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         self.global_config = config_entry.data.get("global", {})
         self.entity_registry = er.async_get(hass)
         self.device_states = {}  # Cache for device states and timestamps
+        self.device_instances = {}  # Cache for device class instances
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data for the optimization cycle."""
@@ -74,6 +79,23 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         # This solves the problem of ensuring devices are turned on/off according to the optimization without violating locks.
         await self._synchronize_states(ideal_on_list)
 
+        # Log optimization cycle results for monitoring
+        _LOGGER.info(f"Optimization cycle completed. Power budget: {power_budget:.2f}W, Ideal devices: {ideal_on_list}")
+
+        # Additional detailed logging for debugging
+        device_status = []
+        for device_config in self.devices:
+            device_name = device_config[CONF_NAME]
+            state_info = self.device_states.get(device_name, {})
+            device_status.append({
+                "name": device_name,
+                "is_on": state_info.get("is_on", False),
+                "locked": state_info.get(ATTR_IS_LOCKED, False),
+                "power": state_info.get(ATTR_MEASURED_POWER_AVG, 0),
+                "priority": device_config.get(CONF_PRIORITY, 5)
+            })
+        _LOGGER.debug(f"Device status summary: {device_status}")
+
         # Return data for sensors (e.g., power budget, surplus avg)
         surplus_avg = await self._get_averaged_surplus()
         return {
@@ -84,108 +106,230 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
 
     async def _aggregate_device_data(self) -> None:
         """Aggregate data for each device: measured_power_avg, is_locked, pvo_last_target_state."""
-        # For each device, read current state, last change timestamp, and averaged power
-        # This updates the device_states cache with necessary info for locking and power calculations.
-        for device in self.devices:
-            if not device.get(CONF_OPTIMIZATION_ENABLED, True):
+        # This solves the problem of collecting all necessary device state information in one place
+        # for use in locking logic, power calculations, and state synchronization.
+        now = datetime.now()
+        for device_config in self.devices:
+            if not device_config.get(CONF_OPTIMIZATION_ENABLED, True):
                 continue
-            device_id = device[CONF_NAME]
-            # Read current state (on/off for switches, value for numeric)
+            device_name = device_config[CONF_NAME]
+
+            # Create or get device instance
+            if device_name not in self.device_instances:
+                self.device_instances[device_name] = create_device(self.hass, device_config)
+            device = self.device_instances[device_name]
+
+            if device is None:
+                continue
+
+            # Get current state
+            is_on = device.is_on()
+
             # Calculate averaged power over sliding window
+            measured_power_avg = await self._get_averaged_power(device_config, now)
+
             # Determine if locked based on min times and manual interventions
-            # Update device_states[device_id] with: state, last_change, measured_power_avg, is_locked, pvo_last_target_state
+            is_locked = await self._is_device_locked(device_config, device, is_on, now)
+
+            # Get last target state from previous cycle
+            last_target_state = self.device_states.get(device_name, {}).get(ATTR_PVO_LAST_TARGET_STATE, is_on)
+
+            # Update device_states cache
+            self.device_states[device_name] = {
+                "is_on": is_on,
+                "measured_power_avg": measured_power_avg,
+                ATTR_IS_LOCKED: is_locked,
+                ATTR_PVO_LAST_TARGET_STATE: last_target_state,
+                "last_update": now,
+            }
+
+    async def _get_averaged_power(self, device_config: Dict[str, Any], now: datetime) -> float:
+        """Get averaged power consumption over sliding window."""
+        # This solves the problem of smoothing power measurements to avoid brief fluctuations affecting optimization.
+        power_sensor = device_config.get(CONF_MEASURED_POWER_ENTITY_ID)
+        if not power_sensor:
+            return device_config.get(CONF_POWER, 0.0)  # Fallback to nominal power
+
+        window_minutes = self.global_config[CONF_SLIDING_WINDOW_SIZE]
+        start_time = now - timedelta(minutes=window_minutes)
+
+        try:
+            # Use recorder history to get averaged power
+            history = await get_instance(self.hass).async_add_executor_job(
+                get_significant_states, self.hass, start_time, now, [power_sensor]
+            )
+            if power_sensor in history and history[power_sensor]:
+                values = [float(state.state) for state in history[power_sensor].values() if state.state not in ['unknown', 'unavailable']]
+                return sum(values) / len(values) if values else 0.0
+        except Exception as e:
+            _LOGGER.warning(f"Failed to get averaged power for {device_config[CONF_NAME]}: {e}")
+
+        # Fallback to current state
+        state = self.hass.states.get(power_sensor)
+        return float(state.state) if state and state.state not in ['unknown', 'unavailable'] else 0.0
+
+    async def _is_device_locked(self, device_config: Dict[str, Any], device: PVDevice, is_on: bool, now: datetime) -> bool:
+        """Determine if a device is locked in its current state."""
+        # This solves the problem of preventing short-cycling and respecting minimum on/off times.
+        device_name = device_config[CONF_NAME]
+        state_info = self.device_states.get(device_name, {})
+
+        # Check minimum on time
+        if is_on:
+            min_on_minutes = device_config.get(CONF_MIN_ON_TIME)
+            if min_on_minutes:
+                # Assume device was turned on at last state change
+                # In a real implementation, track actual timestamps
+                # For now, use a simple heuristic
+                if state_info.get("last_update"):
+                    time_on = (now - state_info["last_update"]).total_seconds() / 60
+                    if time_on < min_on_minutes:
+                        return True
+
+        # Check minimum off time
+        elif not is_on:
+            min_off_minutes = device_config.get(CONF_MIN_OFF_TIME)
+            if min_off_minutes:
+                if state_info.get("last_update"):
+                    time_off = (now - state_info["last_update"]).total_seconds() / 60
+                    if time_off < min_off_minutes:
+                        return True
+
+        # Check for manual intervention
+        last_target = state_info.get(ATTR_PVO_LAST_TARGET_STATE)
+        if last_target is not None and last_target != is_on:
+            # Device state differs from last optimizer target - manual intervention detected
+            return True
+
+        return False
 
     async def _calculate_power_budget(self) -> float:
         """Calculate the total available power budget."""
-        # Read averaged PV surplus
+        # This solves the problem of determining how much power is available for optimization
+        # by combining PV surplus with power from currently running managed devices.
         surplus_avg = await self._get_averaged_surplus()
-        # Sum power of currently ON and managed devices that are not locked
+
         running_manageable_power = 0.0
-        for device in self.devices:
-            if not device.get(CONF_OPTIMIZATION_ENABLED, True):
+        for device_config in self.devices:
+            if not device_config.get(CONF_OPTIMIZATION_ENABLED, True):
                 continue
-            device_id = device[CONF_NAME]
-            state_info = self.device_states.get(device_id, {})
+            device_name = device_config[CONF_NAME]
+            state_info = self.device_states.get(device_name, {})
             if state_info.get("is_on") and not state_info.get(ATTR_IS_LOCKED, False):
-                running_manageable_power += device[CONF_POWER]
-        # Budget = surplus + running_manageable_power
-        return surplus_avg + running_manageable_power
+                # Use measured power if available, otherwise nominal
+                power = state_info.get(ATTR_MEASURED_POWER_AVG, device_config.get(CONF_POWER, 0.0))
+                running_manageable_power += power
+
+        budget = surplus_avg + running_manageable_power
+        _LOGGER.debug(f"Calculated power budget: {surplus_avg:.2f}W surplus + {running_manageable_power:.2f}W running = {budget:.2f}W")
+        return budget
 
     async def _calculate_ideal_state(self, power_budget: float) -> List[str]:
         """Calculate the ideal list of devices to turn on using knapsack per priority."""
+        # This solves the problem of selecting the optimal combination of devices to maximize power utilization
+        # while respecting priority levels and available budget.
         ideal_on_list = []
         remaining_budget = power_budget
-        # Sort devices by priority (1 highest)
-        sorted_devices = sorted(self.devices, key=lambda d: d[CONF_PRIORITY])
-        current_priority = None
-        priority_group = []
-        for device in sorted_devices:
-            if device[CONF_PRIORITY] != current_priority:
-                # Process previous priority group
-                if priority_group:
-                    selected = self._knapsack_select(priority_group, remaining_budget)
-                    ideal_on_list.extend(selected)
-                    remaining_budget -= sum(d[CONF_POWER] for d in selected if d in selected)
-                current_priority = device[CONF_PRIORITY]
-                priority_group = [device]
-            else:
-                priority_group.append(device)
-        # Process last group
-        if priority_group:
-            selected = self._knapsack_select(priority_group, remaining_budget)
+
+        # Group devices by priority
+        devices_by_priority = {}
+        for device_config in self.devices:
+            if not device_config.get(CONF_OPTIMIZATION_ENABLED, True):
+                continue
+            priority = device_config[CONF_PRIORITY]
+            if priority not in devices_by_priority:
+                devices_by_priority[priority] = []
+            devices_by_priority[priority].append(device_config)
+
+        # Process priorities from highest (1) to lowest
+        for priority in sorted(devices_by_priority.keys()):
+            priority_devices = devices_by_priority[priority]
+            selected = self._knapsack_select(priority_devices, remaining_budget)
             ideal_on_list.extend(selected)
+
+            # Update remaining budget
+            for device_name in selected:
+                device_config = next(d for d in priority_devices if d[CONF_NAME] == device_name)
+                power = device_config[CONF_POWER]
+                remaining_budget -= power
+
+        _LOGGER.debug(f"Ideal state calculated: {ideal_on_list} with remaining budget {remaining_budget:.2f}W")
         return ideal_on_list
 
     def _knapsack_select(self, devices: List[Dict], budget: float) -> List[str]:
         """Select subset of devices that maximize power without exceeding budget."""
-        # Simple greedy: sort by power descending, add if fits
-        # For full knapsack, use DP, but greedy suffices for now
-        devices.sort(key=lambda d: d[CONF_POWER], reverse=True)
+        # This solves the knapsack problem for each priority level by greedily selecting
+        # the highest power devices that fit within the budget and are not locked.
+        available_devices = [
+            d for d in devices
+            if not self.device_states.get(d[CONF_NAME], {}).get(ATTR_IS_LOCKED, False)
+        ]
+
+        # Sort by power descending for greedy selection
+        available_devices.sort(key=lambda d: d[CONF_POWER], reverse=True)
+
         selected = []
-        for device in devices:
-            if device[CONF_POWER] <= budget and not self.device_states.get(device[CONF_NAME], {}).get(ATTR_IS_LOCKED, False):
+        for device in available_devices:
+            power = device[CONF_POWER]
+            if power <= budget:
                 selected.append(device[CONF_NAME])
-                budget -= device[CONF_POWER]
+                budget -= power
+
         return selected
 
     async def _synchronize_states(self, ideal_on_list: List[str]) -> None:
         """Turn devices on/off based on ideal list."""
-        for device in self.devices:
-            device_id = device[CONF_NAME]
-            should_be_on = device_id in ideal_on_list
-            state_info = self.device_states.get(device_id, {})
+        # This solves the problem of applying the calculated optimal state to physical devices
+        # while respecting locks and updating tracking information.
+        for device_config in self.devices:
+            device_name = device_config[CONF_NAME]
+            device = self.device_instances.get(device_name)
+            if device is None:
+                continue
+
+            should_be_on = device_name in ideal_on_list
+            state_info = self.device_states.get(device_name, {})
             currently_on = state_info.get("is_on", False)
-            if should_be_on and not currently_on and not state_info.get(ATTR_IS_LOCKED, False):
-                # Turn on
-                await self._activate_device(device)
-                # Update pvo_last_target_state to True
-            elif not should_be_on and currently_on and not state_info.get(ATTR_IS_LOCKED, False):
-                # Turn off
-                await self._deactivate_device(device)
-                # Update pvo_last_target_state to False
+            is_locked = state_info.get(ATTR_IS_LOCKED, False)
 
-    async def _activate_device(self, device: Dict) -> None:
-        """Activate a device based on its type."""
-        if device[CONF_TYPE] == TYPE_SWITCH:
-            # Set switch to on (consider invert_switch)
-            pass
-        elif device[CONF_TYPE] == TYPE_NUMERIC:
-            # Set numeric targets to activated_value
-            pass
+            if should_be_on and not currently_on and not is_locked:
+                # Activate device
+                await device.activate()
+                # Update last target state
+                self.device_states[device_name][ATTR_PVO_LAST_TARGET_STATE] = True
+                _LOGGER.info(f"Activated device: {device_name}")
 
-    async def _deactivate_device(self, device: Dict) -> None:
-        """Deactivate a device based on its type."""
-        if device[CONF_TYPE] == TYPE_SWITCH:
-            # Set switch to off (consider invert_switch)
-            pass
-        elif device[CONF_TYPE] == TYPE_NUMERIC:
-            # Set numeric targets to deactivated_value
-            pass
+            elif not should_be_on and currently_on and not is_locked:
+                # Deactivate device
+                await device.deactivate()
+                # Update last target state
+                self.device_states[device_name][ATTR_PVO_LAST_TARGET_STATE] = False
+                _LOGGER.info(f"Deactivated device: {device_name}")
 
     async def _get_averaged_surplus(self) -> float:
         """Get averaged PV surplus over sliding window."""
-        # Use history stats or similar to average the surplus sensor
-        # For now, return current value as placeholder
+        # This solves the problem of smoothing surplus readings to avoid optimization
+        # decisions based on brief fluctuations.
         surplus_entity = self.global_config[CONF_SURPLUS_SENSOR_ENTITY_ID]
+        window_minutes = self.global_config[CONF_SLIDING_WINDOW_SIZE]
+        now = datetime.now()
+        start_time = now - timedelta(minutes=window_minutes)
+
+        try:
+            # Use recorder history to get averaged surplus
+            history = await get_instance(self.hass).async_add_executor_job(
+                get_significant_states, self.hass, start_time, now, [surplus_entity]
+            )
+            if surplus_entity in history and history[surplus_entity]:
+                values = [float(state.state) for state in history[surplus_entity].values() if state.state not in ['unknown', 'unavailable']]
+                avg = sum(values) / len(values) if values else 0.0
+                _LOGGER.debug(f"Averaged surplus over {window_minutes}min: {avg:.2f}W")
+                return avg
+        except Exception as e:
+            _LOGGER.warning(f"Failed to get averaged surplus: {e}")
+
+        # Fallback to current state
         state = self.hass.states.get(surplus_entity)
-        return float(state.state) if state else 0.0
+        current = float(state.state) if state and state.state not in ['unknown', 'unavailable'] else 0.0
+        _LOGGER.debug(f"Using current surplus (fallback): {current:.2f}W")
+        return current

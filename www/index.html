@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PV Optimizer</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap">
+    <style>
+        :root {
+            --primary-color: #1976d2;
+            --secondary-color: #dc004e;
+            --background-color: #f5f5f5;
+            --card-background: #ffffff;
+            --text-color: #333333;
+            --text-secondary: #666666;
+            --border-color: #e0e0e0;
+            --success-color: #4caf50;
+            --warning-color: #ff9800;
+            --error-color: #f44336;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: var(--card-background);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            color: var(--primary-color);
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: var(--card-background);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .card h2 {
+            color: var(--primary-color);
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .btn {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+
+        .btn:hover {
+            background: #1565c0;
+        }
+
+        .btn-secondary {
+            background: var(--text-secondary);
+        }
+
+        .btn-secondary:hover {
+            background: #555;
+        }
+
+        .btn-danger {
+            background: var(--error-color);
+        }
+
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+
+        .device-list {
+            margin-top: 20px;
+        }
+
+        .device-item {
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 10px;
+            background: #fafafa;
+        }
+
+        .device-item h3 {
+            margin-bottom: 10px;
+            color: var(--primary-color);
+        }
+
+        .device-item .status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status.active {
+            background: var(--success-color);
+            color: white;
+        }
+
+        .status.inactive {
+            background: var(--text-secondary);
+            color: white;
+        }
+
+        .status.locked {
+            background: var(--warning-color);
+            color: white;
+        }
+
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .tab.active {
+            border-bottom-color: var(--primary-color);
+            color: var(--primary-color);
+            font-weight: 500;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: var(--card-background);
+            margin: 10% auto;
+            padding: 20px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .close {
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close:hover {
+            color: var(--error-color);
+        }
+
+        .form-row {
+            display: flex;
+            gap: 15px;
+        }
+
+        .form-row .form-group {
+            flex: 1;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>PV Optimizer</h1>
+            <p>Optimize your solar power consumption by automatically controlling appliances based on surplus energy.</p>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" onclick="showTab('overview')">Overview</div>
+            <div class="tab" onclick="showTab('devices')">Devices</div>
+            <div class="tab" onclick="showTab('settings')">Settings</div>
+        </div>
+
+        <div id="overview" class="tab-content active">
+            <div class="grid">
+                <div class="card">
+                    <h2>Power Status</h2>
+                    <div id="power-status">
+                        <p>Loading power data...</p>
+                    </div>
+                </div>
+                <div class="card">
+                    <h2>Active Devices</h2>
+                    <div id="active-devices">
+                        <p>Loading device data...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="devices" class="tab-content">
+            <div class="card">
+                <h2>Device Management</h2>
+                <button class="btn" onclick="openDeviceModal()">Add Device</button>
+                <div id="device-list" class="device-list">
+                    <p>Loading devices...</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="settings" class="tab-content">
+            <div class="card">
+                <h2>Global Settings</h2>
+                <form id="settings-form">
+                    <div class="form-group">
+                        <label for="surplus_sensor">Surplus Sensor Entity ID:</label>
+                        <input type="text" id="surplus_sensor" name="surplus_sensor" placeholder="sensor.pv_surplus">
+                    </div>
+                    <div class="form-group">
+                        <label for="sliding_window">Sliding Window Size (minutes):</label>
+                        <input type="number" id="sliding_window" name="sliding_window" min="1" max="60" value="5">
+                    </div>
+                    <div class="form-group">
+                        <label for="cycle_time">Optimization Cycle Time (seconds):</label>
+                        <input type="number" id="cycle_time" name="cycle_time" min="10" max="300" value="60">
+                    </div>
+                    <button type="submit" class="btn">Save Settings</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Device Modal -->
+    <div id="device-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeDeviceModal()">&times;</span>
+            <h2 id="modal-title">Add Device</h2>
+            <form id="device-form">
+                <div class="form-group">
+                    <label for="device_name">Device Name:</label>
+                    <input type="text" id="device_name" name="name" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="device_type">Device Type:</label>
+                        <select id="device_type" name="type" onchange="toggleDeviceFields()" required>
+                            <option value="">Select Type</option>
+                            <option value="switch">Switch</option>
+                            <option value="numeric">Numeric</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="device_priority">Priority (1-10):</label>
+                        <input type="number" id="device_priority" name="priority" min="1" max="10" value="5" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="device_power">Power Consumption (W):</label>
+                        <input type="number" id="device_power" name="power" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="power_sensor">Power Sensor Entity ID:</label>
+                        <input type="text" id="power_sensor" name="measured_power_entity_id" placeholder="sensor.device_power">
+                    </div>
+                </div>
+
+                <!-- Switch-specific fields -->
+                <div id="switch-fields" style="display: none;">
+                    <div class="form-group">
+                        <label for="switch_entity">Switch Entity ID:</label>
+                        <input type="text" id="switch_entity" name="switch_entity_id" placeholder="switch.device">
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="invert_switch" name="invert_switch"> Invert Switch Logic
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Numeric-specific fields -->
+                <div id="numeric-fields" style="display: none;">
+                    <div id="numeric-targets">
+                        <h3>Numeric Targets</h3>
+                        <div class="numeric-target">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Entity ID:</label>
+                                    <input type="text" name="numeric_entity_id[]" placeholder="number.device_setting">
+                                </div>
+                                <div class="form-group">
+                                    <label>Activated Value:</label>
+                                    <input type="number" name="activated_value[]" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label>Deactivated Value:</label>
+                                    <input type="number" name="deactivated_value[]" step="any">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary" onclick="addNumericTarget()">Add Target</button>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="min_on_time">Min On Time (minutes):</label>
+                        <input type="number" id="min_on_time" name="min_on_time" min="0" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="min_off_time">Min Off Time (minutes):</label>
+                        <input type="number" id="min_off_time" name="min_off_time" min="0" value="0">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="optimization_enabled" name="optimization_enabled" checked> Enable Optimization
+                    </label>
+                </div>
+
+                <button type="submit" class="btn">Save Device</button>
+                <button type="button" class="btn btn-secondary" onclick="closeDeviceModal()">Cancel</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let devices = [];
+        let currentDeviceId = null;
+
+        // Tab switching
+        function showTab(tabName) {
+            const tabs = document.querySelectorAll('.tab');
+            const contents = document.querySelectorAll('.tab-content');
+
+            tabs.forEach(tab => tab.classList.remove('active'));
+            contents.forEach(content => content.classList.remove('active'));
+
+            document.querySelector(`[onclick="showTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(tabName).classList.add('active');
+        }
+
+        // Device modal functions
+        function openDeviceModal(deviceId = null) {
+            currentDeviceId = deviceId;
+            const modal = document.getElementById('device-modal');
+            const form = document.getElementById('device-form');
+            const title = document.getElementById('modal-title');
+
+            if (deviceId) {
+                title.textContent = 'Edit Device';
+                // Load device data (would be implemented with API call)
+                loadDeviceData(deviceId);
+            } else {
+                title.textContent = 'Add Device';
+                form.reset();
+            }
+
+            modal.style.display = 'block';
+        }
+
+        function closeDeviceModal() {
+            document.getElementById('device-modal').style.display = 'none';
+            currentDeviceId = null;
+        }
+
+        function toggleDeviceFields() {
+            const type = document.getElementById('device_type').value;
+            const switchFields = document.getElementById('switch-fields');
+            const numericFields = document.getElementById('numeric-fields');
+
+            switchFields.style.display = type === 'switch' ? 'block' : 'none';
+            numericFields.style.display = type === 'numeric' ? 'block' : 'none';
+        }
+
+        function addNumericTarget() {
+            const container = document.getElementById('numeric-targets');
+            const targetDiv = document.createElement('div');
+            targetDiv.className = 'numeric-target';
+            targetDiv.innerHTML = `
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Entity ID:</label>
+                        <input type="text" name="numeric_entity_id[]" placeholder="number.device_setting">
+                    </div>
+                    <div class="form-group">
+                        <label>Activated Value:</label>
+                        <input type="number" name="activated_value[]" step="any">
+                    </div>
+                    <div class="form-group">
+                        <label>Deactivated Value:</label>
+                        <input type="number" name="deactivated_value[]" step="any">
+                    </div>
+                    <div class="form-group">
+                        <button type="button" class="btn btn-danger" onclick="removeNumericTarget(this)">Remove</button>
+                    </div>
+                </div>
+            `;
+            container.appendChild(targetDiv);
+        }
+
+        function removeNumericTarget(button) {
+            button.closest('.numeric-target').remove();
+        }
+
+        // Load data functions (would connect to Home Assistant API)
+        async function loadPowerStatus() {
+            try {
+                // This would be replaced with actual API calls to Home Assistant
+                const response = await fetch('/api/states/sensor.pv_optimizer_power_budget');
+                const data = await response.json();
+                document.getElementById('power-status').innerHTML = `
+                    <p><strong>Power Budget:</strong> ${data.state || 'N/A'} W</p>
+                    <p><strong>Averaged Surplus:</strong> Loading...</p>
+                `;
+            } catch (error) {
+                document.getElementById('power-status').innerHTML = '<p>Unable to load power data</p>';
+            }
+        }
+
+        async function loadDevices() {
+            try {
+                // This would be replaced with actual API calls
+                devices = [
+                    {
+                        id: 1,
+                        name: 'Hot Water Heater',
+                        type: 'switch',
+                        priority: 1,
+                        power: 2000,
+                        status: 'active',
+                        locked: false
+                    },
+                    {
+                        id: 2,
+                        name: 'EV Charger',
+                        type: 'numeric',
+                        priority: 2,
+                        power: 11000,
+                        status: 'inactive',
+                        locked: true
+                    }
+                ];
+
+                renderDevices();
+            } catch (error) {
+                document.getElementById('device-list').innerHTML = '<p>Unable to load devices</p>';
+            }
+        }
+
+        function renderDevices() {
+            const container = document.getElementById('device-list');
+            container.innerHTML = devices.map(device => `
+                <div class="device-item">
+                    <h3>${device.name}</h3>
+                    <p><strong>Type:</strong> ${device.type} | <strong>Priority:</strong> ${device.priority} | <strong>Power:</strong> ${device.power}W</p>
+                    <span class="status ${device.locked ? 'locked' : device.status}">${device.locked ? 'Locked' : device.status}</span>
+                    <div style="margin-top: 10px;">
+                        <button class="btn btn-secondary" onclick="openDeviceModal(${device.id})">Edit</button>
+                        <button class="btn btn-danger" onclick="deleteDevice(${device.id})">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function loadDeviceData(deviceId) {
+            const device = devices.find(d => d.id === deviceId);
+            if (device) {
+                document.getElementById('device_name').value = device.name;
+                document.getElementById('device_type').value = device.type;
+                document.getElementById('device_priority').value = device.priority;
+                document.getElementById('device_power').value = device.power;
+                toggleDeviceFields();
+                // Load other fields based on device type
+            }
+        }
+
+        async function deleteDevice(deviceId) {
+            if (confirm('Are you sure you want to delete this device?')) {
+                try {
+                    // API call to delete device
+                    devices = devices.filter(d => d.id !== deviceId);
+                    renderDevices();
+                } catch (error) {
+                    alert('Failed to delete device');
+                }
+            }
+        }
+
+        // Form handlers
+        document.getElementById('device-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const deviceData = Object.fromEntries(formData);
+
+            try {
+                if (currentDeviceId) {
+                    // Update existing device
+                    const index = devices.findIndex(d => d.id === currentDeviceId);
+                    devices[index] = { ...devices[index], ...deviceData };
+                } else {
+                    // Add new device
+                    const newDevice = {
+                        id: Date.now(),
+                        ...deviceData,
+                        status: 'inactive',
+                        locked: false
+                    };
+                    devices.push(newDevice);
+                }
+
+                renderDevices();
+                closeDeviceModal();
+            } catch (error) {
+                alert('Failed to save device');
+            }
+        });
+
+        document.getElementById('settings-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const settings = Object.fromEntries(formData);
+
+            try {
+                // API call to save settings
+                alert('Settings saved successfully!');
+            } catch (error) {
+                alert('Failed to save settings');
+            }
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadPowerStatus();
+            loadDevices();
+        });
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('device-modal');
+            if (event.target === modal) {
+                closeDeviceModal();
+            }
+        };
+    </script>
+</body>
+</html>

@@ -8,5 +8,8 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/your_repo/pv_optimizer/issues",
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "frontend": {
+    "panel": "pv_optimizer"
+  }
 }

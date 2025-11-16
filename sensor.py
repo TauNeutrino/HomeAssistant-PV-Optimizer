@@ -13,6 +13,7 @@ from .const import (
     CONF_NAME,
     ATTR_IS_LOCKED,
     ATTR_MEASURED_POWER_AVG,
+    ATTR_PVO_LAST_TARGET_STATE,
 )
 from .coordinator import PVOptimizerCoordinator
 
@@ -33,11 +34,13 @@ async def async_setup_entry(
     entities.append(PVOptimizerControllerSensor(coordinator, "power_budget", "Power Budget", "W"))
     entities.append(PVOptimizerControllerSensor(coordinator, "surplus_avg", "Averaged Surplus", "W"))
 
-    # Appliance sensors
+    # Appliance sensors - monitoring entities as per requirements
     for device in coordinator.devices:
         device_name = device[CONF_NAME]
-        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, "is_locked", "Locked", None))
-        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, "measured_power_avg", "Measured Power Avg", "W"))
+        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, ATTR_IS_LOCKED, "Locked", None))
+        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, ATTR_MEASURED_POWER_AVG, "Measured Power Avg", "W"))
+        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, ATTR_PVO_LAST_TARGET_STATE, "Last Target State", None))
+        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, "contribution_to_budget", "Contribution to Budget", "W"))
 
     async_add_entities(entities)
 
@@ -87,8 +90,16 @@ class PVOptimizerApplianceSensor(CoordinatorEntity, SensorEntity):
     def state(self) -> Any:
         """Return the state of the sensor."""
         device_data = self.coordinator.device_states.get(self._device_name, {})
-        if self._data_key == "is_locked":
+        if self._data_key == ATTR_IS_LOCKED:
             return device_data.get(ATTR_IS_LOCKED, False)
-        elif self._data_key == "measured_power_avg":
+        elif self._data_key == ATTR_MEASURED_POWER_AVG:
             return device_data.get(ATTR_MEASURED_POWER_AVG, 0)
+        elif self._data_key == ATTR_PVO_LAST_TARGET_STATE:
+            return device_data.get(ATTR_PVO_LAST_TARGET_STATE, False)
+        elif self._data_key == "contribution_to_budget":
+            # This solves the problem of showing each device's contribution to the total power budget
+            # when it's currently on and managed by the optimizer
+            if device_data.get("is_on") and not device_data.get(ATTR_IS_LOCKED, False):
+                return device_data.get(ATTR_MEASURED_POWER_AVG, 0)
+            return 0
         return None

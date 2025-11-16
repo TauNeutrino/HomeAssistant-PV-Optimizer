@@ -6,6 +6,9 @@ This document outlines the functional requirements for a software system designe
 
 The primary objective is to maximize the use of self-generated solar energy by automatically running appliances when there is a power surplus (i.e., when more power is being generated than consumed, which would otherwise be fed into the grid). This reduces reliance on grid power and lowers energy costs.
 
+The secondary goal is ease of use. Therefore all configuration options have to be available in a nice graphical user interface. Configuration options as well as the implications of selecting certain options have to be explained to the user directly at interface level. The interface has to be well structured into configuration topics.
+For easy accessability, the PV Optimizer interface shall be linked directly on the left sidebar (like the "browser mod" integration)
+
 ## 2. Core Concepts
 
 - **PV Surplus:** The foundational metric for all decisions. It is defined as the net power flow at the grid connection point. A negative value indicates a surplus (power is being exported to the grid), and a positive value indicates a deficit (power is being imported from the grid). The system should aim to keep this value as close to zero as possible from the grid's perspective.
@@ -27,6 +30,8 @@ The main view of the PV Optimizer panel allows you to set the global parameters 
 -   **`surplus_sensor_entity_id`**: The primary sensor entity that provides the PV surplus value. The system uses a time-averaged (sliding window) value of this sensor to smooth out brief fluctuations.
 -   **`sliding_window_size`**: The size of the sliding window in minutes for averaging the surplus power.
 -   **`optimization_cycle_time`**: The frequency in seconds at which the optimization algorithm runs.
+
+**Important Note on Configuration:** Device configuration (adding, editing, or removing controllable devices) is handled exclusively through the PV Optimizer frontend panel in the Home Assistant sidebar. The initial integration setup via config flow only requires the global parameters above. No device configuration is prompted during the config flow; devices are managed entirely via the UI panel after setup. The integration is immediately usable after global config setup with an empty device list.
 
 ### 3.2. Device Management
 
