@@ -32,12 +32,7 @@ async def _register_frontend_panel(hass: HomeAssistant) -> None:
             webcomponent_name="pv-optimizer-panel",
             sidebar_title="PV Optimizer",
             sidebar_icon="mdi:solar-panel",
-            config={
-                "js_url": "/local/pv_optimizer/panel.js",
-                "css_url": None,
-                "embed_iframe": False,
-                "trust_external_script": False,
-            },
+            js_url="/local/pv_optimizer/panel.js",
         )
         _LOGGER.info("PV Optimizer frontend panel registered successfully")
     except Exception as e:
