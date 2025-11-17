@@ -31,7 +31,6 @@ from .const import (
     TYPE_NUMERIC,
 )
 from .coordinator import PVOptimizerCoordinator
-from .mod_view import async_setup_panel
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,13 +59,6 @@ SERVICE_ADD_DEVICE_SCHEMA = vol.Schema({
 SERVICE_REMOVE_DEVICE_SCHEMA = vol.Schema({
     vol.Required(CONF_NAME): cv.string,
 })
-
-
-async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
-    """Set up the PV Optimizer integration."""
-    # Register frontend panel using browser_mod-style approach
-    await async_setup_panel(hass)
-    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

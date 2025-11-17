@@ -45,7 +45,7 @@ class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step - only global config, no devices."""
         if user_input is not None:
             # Create the config entry with only global config
-            # Devices will be managed via the frontend panel
+            # Devices will be managed via configuration
             return self.async_create_entry(
                 title="PV Optimizer",
                 data={
@@ -77,7 +77,7 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
         """Manage the options - update global config only."""
         if user_input is not None:
             # Update the config entry with new global settings
-            # Devices remain unchanged (managed via frontend)
+            # Devices remain unchanged (managed via configuration)
             new_data = dict(self.config_entry.data)
             new_data["global"] = user_input
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)

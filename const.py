@@ -1,7 +1,5 @@
 """Constants for PV Optimizer integration."""
 DOMAIN = "pv_optimizer"
-# Panel configuration
-PANEL_URL = "/pv_optimizer_panel.js"
 
 # Global config keys
 CONF_SURPLUS_SENSOR_ENTITY_ID = "surplus_sensor_entity_id"
