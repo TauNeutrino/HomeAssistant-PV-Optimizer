@@ -33,6 +33,7 @@ async def async_setup_panel(hass: HomeAssistant):
                 "js_url": FRONTEND_URL,
                 "embed_iframe": False,
                 "trust_external_script": False,
+                "module": True,
             }
         },
     )
