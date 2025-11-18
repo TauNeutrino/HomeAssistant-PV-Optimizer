@@ -57,11 +57,14 @@ class PVOptimizerSwitch(CoordinatorEntity, SwitchEntity):
         self._invert = device.get(CONF_INVERT_SWITCH, False)
         self._attr_name = f"PVO {self._device_name}"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{self._device_name}_switch"
+        # Get device type for model
+        device_type = self._device.get("type", "Unknown")
+        
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{self._device_name}")},
             "name": f"PVO {self._device_name}",
-            "manufacturer": "Custom",
-            "model": "PV Appliance",
+            "manufacturer": "PV Optimizer",
+            "model": f"{device_type.capitalize()} Device",
         }
 
     @property
@@ -103,11 +106,18 @@ class PVOptimizerOptimizationSwitch(CoordinatorEntity, SwitchEntity):
         self._device_name = device_name
         self._attr_name = f"PVO {device_name} Optimization Enabled"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_optimization_enabled"
+        # Get device type for model
+        device_type = "Unknown"
+        for device in coordinator.devices:
+            if device[CONF_NAME] == device_name:
+                device_type = device.get("type", "Unknown")
+                break
+        
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{device_name}")},
             "name": f"PVO {device_name}",
-            "manufacturer": "Custom",
-            "model": "PV Appliance",
+            "manufacturer": "PV Optimizer",
+            "model": f"{device_type.capitalize()} Device",
         }
 
     @property

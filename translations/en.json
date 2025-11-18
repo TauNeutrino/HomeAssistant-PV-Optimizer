@@ -28,7 +28,7 @@
       },
       "global_config": {
         "title": "Global Configuration",
-        "description": "Configure global parameters for the PV Optimizer. {info}",
+        "description": "Configure global parameters for the PV Optimizer.",
         "data": {
           "surplus_sensor_entity_id": "PV Surplus Sensor",
           "sliding_window_size": "Sliding Window Size",
@@ -45,7 +45,8 @@
         "description": "Manage your controllable devices",
         "menu_options": {
           "device_list": "Show Device List",
-          "add_device": "Add Device"
+          "add_switch_device": "Add Switch Device",
+          "add_numeric_device": "Add Numeric Device"
         }
       },
       "device_list": {
@@ -56,12 +57,11 @@
           "action": "Action"
         }
       },
-      "add_device": {
-        "title": "Add Device",
-        "description": "{info}",
+      "add_switch_device": {
+        "title": "Add Switch Device",
+        "description": "Configure a new Switch device (On/Off control)",
         "data": {
           "name": "Device Name",
-          "type": "Device Type",
           "priority": "Priority",
           "power": "Nominal Power",
           "optimization_enabled": "Optimization Enabled",
@@ -74,16 +74,39 @@
         },
         "data_description": {
           "name": "A unique name for this device",
-          "type": "Switch: On/Off control | Numeric: Value adjustment",
           "priority": "1 = highest priority (activated first), 10 = lowest priority",
           "power": "The device's nominal power consumption in Watts",
           "optimization_enabled": "Whether this device should be managed by the optimizer",
           "switch_entity_id": "The switch entity to control",
-          "invert_switch": "Turn OFF to activate, ON to deactivate (for normally-closed switches)",
-          "measured_power_entity_id": "Optional: Sensor providing actual power consumption (overrides nominal power)",
-          "power_threshold": "Power threshold in Watts to determine if device is ON (when using measured power)",
-          "min_on_time": "Device must stay on for at least this duration (prevents short-cycling)",
-          "min_off_time": "Device must stay off for at least this duration (prevents short-cycling)"
+          "invert_switch": "Turn OFF to activate, ON to deactivate",
+          "measured_power_entity_id": "Optional: Sensor providing actual power consumption",
+          "power_threshold": "Power threshold in Watts to determine if device is ON",
+          "min_on_time": "Device must stay on for at least this duration",
+          "min_off_time": "Device must stay off for at least this duration"
+        }
+      },
+      "add_numeric_device": {
+        "title": "Add Numeric Device",
+        "description": "Configure a new Numeric device. Next step: Configure numeric targets (up to 5).",
+        "data": {
+          "name": "Device Name",
+          "priority": "Priority",
+          "power": "Nominal Power",
+          "optimization_enabled": "Optimization Enabled",
+          "measured_power_entity_id": "Measured Power Sensor",
+          "power_threshold": "Power Threshold",
+          "min_on_time": "Minimum On Time",
+          "min_off_time": "Minimum Off Time"
+        },
+        "data_description": {
+          "name": "A unique name for this device",
+          "priority": "1 = highest priority (activated first), 10 = lowest priority",
+          "power": "The device's nominal power consumption in Watts",
+          "optimization_enabled": "Whether this device should be managed by the optimizer",
+          "measured_power_entity_id": "Optional: Sensor providing actual power consumption",
+          "power_threshold": "Power threshold in Watts to determine if device is ON",
+          "min_on_time": "Device must stay on for at least this duration",
+          "min_off_time": "Device must stay off for at least this duration"
         }
       },
       "edit_device": {

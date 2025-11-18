@@ -1,8 +1,8 @@
 /**
  * PV Optimizer Panel for Home Assistant
  * 
- * Uses HA's fire_event system to properly trigger navigation and
- * ha-button components to match browser_mod style (no flicker).
+ * Minimal panel that shows device status and provides access to config flow.
+ * Based on browser_mod patterns for proper button handling without flicker.
  */
 
 class PvOptimizerPanel extends HTMLElement {
@@ -76,37 +76,21 @@ class PvOptimizerPanel extends HTMLElement {
   }
 
   /**
-   * Navigate to integration options - uses HA's proper navigation
+   * Navigate to integration config page
+   * Opens the options flow directly
    */
-  _openConfig() {
-    // Use fire_event to properly navigate
-    const event = new CustomEvent('hass-more-info', {
-      detail: { entityId: null },
-      bubbles: true,
-      composed: true,
+  _openOptionsFlow() {
+    // Navigate to the integration's config entry page
+    this._hass.callService("browser_mod", "navigate", {
+      path: "/config/integrations/integration/pv_optimizer"
+    }).catch(() => {
+      // Fallback: use direct navigation
+      window.history.pushState(null, '', '/config/integrations/integration/pv_optimizer');
+      window.dispatchEvent(new CustomEvent('location-changed', {
+        bubbles: true,
+        composed: true
+      }));
     });
-    
-    // Find the config entry
-    if (this._hass.config_entries) {
-      const entries = Object.values(this._hass.config_entries);
-      const entry = entries.find(e => e.domain === 'pv_optimizer');
-      
-      if (entry) {
-        // Fire navigation event
-        const navEvent = new CustomEvent('config-entry-options', {
-          detail: { entry_id: entry.entry_id },
-          bubbles: true,
-          composed: true,
-        });
-        this.dispatchEvent(navEvent);
-        
-        // Also try direct navigation as fallback
-        setTimeout(() => {
-          window.history.pushState(null, '', `/config/integrations/config_entry/${entry.entry_id}`);
-          window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
-        }, 100);
-      }
-    }
   }
 
   render() {
@@ -116,49 +100,22 @@ class PvOptimizerPanel extends HTMLElement {
       <style>
         :host {
           display: block;
-          padding: 16px;
+          padding: 0;
           background-color: var(--primary-background-color);
         }
 
-        .header {
-          font-size: 24px;
-          font-weight: 500;
-          margin-bottom: 24px;
-          color: var(--primary-text-color);
-        }
-
-        .card {
-          background-color: var(--ha-card-background, var(--card-background-color, white));
-          border-radius: var(--ha-card-border-radius, 12px);
-          box-shadow: var(--ha-card-box-shadow, 0 2px 4px rgba(0,0,0,0.1));
-          padding: 20px;
-          margin-bottom: 20px;
+        ha-card {
+          margin: 16px;
         }
 
         .card-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 16px;
           font-size: 18px;
           font-weight: 600;
-          color: var(--primary-text-color);
+          padding: 16px;
         }
 
         .card-content {
-          color: var(--primary-text-color);
-        }
-
-        .config-button-container {
-          text-align: center;
-          padding: 32px 20px;
-        }
-
-        /* HA-style button (no flicker) */
-        ha-button {
-          --mdc-theme-primary: var(--primary-color);
-          font-size: 16px;
-          padding: 8px 24px;
+          padding: 16px;
         }
 
         .config-group {
@@ -169,6 +126,7 @@ class PvOptimizerPanel extends HTMLElement {
           font-weight: 500;
           margin-bottom: 4px;
           font-size: 14px;
+          color: var(--secondary-text-color);
         }
 
         .config-value {
@@ -185,8 +143,7 @@ class PvOptimizerPanel extends HTMLElement {
         }
 
         .device-card {
-          background-color: var(--card-background-color);
-          border: 1px solid var(--divider-color);
+          background-color: var(--secondary-background-color);
           border-left: 4px solid var(--primary-color);
           border-radius: 8px;
           padding: 16px;
@@ -217,8 +174,6 @@ class PvOptimizerPanel extends HTMLElement {
           background-color: rgba(244, 67, 54, 0.1);
           padding: 12px;
           border-radius: 4px;
-          margin: 8px 0;
-          border-left: 4px solid var(--error-color);
         }
 
         .loading {
@@ -227,24 +182,19 @@ class PvOptimizerPanel extends HTMLElement {
           color: var(--secondary-text-color);
         }
 
-        .info-box {
-          background-color: rgba(3, 169, 244, 0.1);
-          border-left: 4px solid var(--info-color, #2196f3);
-          padding: 16px;
-          border-radius: 4px;
-          margin-bottom: 20px;
+        .config-button-container {
+          text-align: center;
+          padding: 32px 20px;
         }
 
-        .info-title {
-          font-weight: 600;
-          margin-bottom: 8px;
-          color: var(--primary-text-color);
+        ha-alert {
+          display: block;
+          margin-bottom: 16px;
         }
 
-        .info-text {
-          color: var(--secondary-text-color);
-          font-size: 14px;
-          line-height: 1.5;
+        /* Ensure ha-button doesn't flicker */
+        ha-button {
+          --md-sys-color-primary: var(--primary-color);
         }
       </style>
     `;
@@ -252,15 +202,14 @@ class PvOptimizerPanel extends HTMLElement {
     if (this._error) {
       this.shadowRoot.innerHTML = `
         ${styles}
-        <div class="header">⚡ PV Optimizer</div>
-        <div class="card">
-          <div class="error">
-            <strong>Error:</strong> ${this._error}
-            <div style="margin-top: 12px;">
-              <ha-button onclick="location.reload()">Refresh Page</ha-button>
-            </div>
+        <ha-card outlined header="PV Optimizer">
+          <div class="card-content">
+            <ha-alert alert-type="error">
+              ${this._error}
+              <ha-button slot="action" onclick="location.reload()">Refresh</ha-button>
+            </ha-alert>
           </div>
-        </div>
+        </ha-card>
       `;
       return;
     }
@@ -268,10 +217,11 @@ class PvOptimizerPanel extends HTMLElement {
     if (this._loading) {
       this.shadowRoot.innerHTML = `
         ${styles}
-        <div class="header">⚡ PV Optimizer</div>
-        <div class="card">
-          <div class="loading">⏳ Loading configuration...</div>
-        </div>
+        <ha-card outlined header="PV Optimizer">
+          <div class="card-content">
+            <div class="loading">⏳ Loading configuration...</div>
+          </div>
+        </ha-card>
       `;
       return;
     }
@@ -281,42 +231,29 @@ class PvOptimizerPanel extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       ${styles}
-      <div class="header">⚡ PV Optimizer</div>
       
-      <div class="info-box">
-        <div class="info-title">ℹ️ Configuration via Options Flow</div>
-        <div class="info-text">
-          All configuration (global settings and device management) is handled through 
-          Home Assistant's native configuration interface. Click the button below to access 
-          the configuration menu.
+      <ha-card outlined header="PV Optimizer">
+        <div class="card-content">
+          <ha-alert alert-type="info" title="Configuration">
+            All settings are managed through the integration's options flow.
+            Click the button below to access device management and global settings.
+          </ha-alert>
         </div>
-      </div>
-
-      <div class="card">
-        <div class="config-button-container">
-          <ha-button raised id="open-config-btn">
-            <ha-icon icon="mdi:cog"></ha-icon>
-            Open Configuration
-          </ha-button>
-          <div style="margin-top: 12px; color: var(--secondary-text-color); font-size: 14px;">
-            Configure global settings • Manage devices • Add/Edit/Delete
+        
+        <div class="card-content">
+          <div class="config-button-container">
+            <ha-button
+              id="open-config-btn"
+              appearance="filled"
+            >
+              <ha-icon slot="start" icon="mdi:cog"></ha-icon>
+              Open Configuration
+            </ha-button>
           </div>
         </div>
-      </div>
-      
-      ${this._renderGlobalConfig(globalConfig)}
-      ${this._renderDeviceList(devices)}
-    `;
+      </ha-card>
 
-    this._attachEventListeners();
-  }
-
-  _renderGlobalConfig(globalConfig) {
-    return `
-      <div class="card">
-        <div class="card-header">
-          <span>📊 Global Configuration</span>
-        </div>
+      <ha-card outlined header="Global Configuration">
         <div class="card-content">
           <div class="config-group">
             <div class="config-label">PV Surplus Sensor</div>
@@ -331,16 +268,9 @@ class PvOptimizerPanel extends HTMLElement {
             <div class="config-value">${globalConfig.optimization_cycle_time || 60} seconds</div>
           </div>
         </div>
-      </div>
-    `;
-  }
+      </ha-card>
 
-  _renderDeviceList(devices) {
-    return `
-      <div class="card">
-        <div class="card-header">
-          <span>📱 Devices (${devices.length})</span>
-        </div>
+      <ha-card outlined header="Devices (${devices.length})">
         <div class="card-content">
           ${devices.length === 0 ? `
             <div class="empty-state">
@@ -349,10 +279,6 @@ class PvOptimizerPanel extends HTMLElement {
               <div style="font-size: 14px; margin-bottom: 16px;">
                 Click "Open Configuration" above to add your first device
               </div>
-              <ha-button id="add-first-device-btn">
-                <ha-icon icon="mdi:plus"></ha-icon>
-                Add First Device
-              </ha-button>
             </div>
           ` : `
             <div class="device-list">
@@ -360,8 +286,10 @@ class PvOptimizerPanel extends HTMLElement {
             </div>
           `}
         </div>
-      </div>
+      </ha-card>
     `;
+
+    this._attachEventListeners();
   }
 
   _renderDeviceCard(deviceData) {
@@ -390,12 +318,12 @@ class PvOptimizerPanel extends HTMLElement {
   _attachEventListeners() {
     const openConfigBtn = this.shadowRoot.querySelector('#open-config-btn');
     if (openConfigBtn) {
-      openConfigBtn.addEventListener('click', () => this._openConfig());
-    }
-
-    const addFirstBtn = this.shadowRoot.querySelector('#add-first-device-btn');
-    if (addFirstBtn) {
-      addFirstBtn.addEventListener('click', () => this._openConfig());
+      // Use proper addEventListener (not onclick) to avoid focus issues
+      openConfigBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this._openOptionsFlow();
+      });
     }
   }
 }

@@ -28,7 +28,7 @@
       },
       "global_config": {
         "title": "Globale Konfiguration",
-        "description": "Konfigurieren Sie globale Parameter für den PV Optimizer. {info}",
+        "description": "Konfigurieren Sie globale Parameter für den PV Optimizer.",
         "data": {
           "surplus_sensor_entity_id": "PV-Überschuss-Sensor",
           "sliding_window_size": "Gleitende Fenstergröße",
@@ -45,7 +45,8 @@
         "description": "Verwalten Sie Ihre kontrollierbaren Geräte",
         "menu_options": {
           "device_list": "Geräteliste anzeigen",
-          "add_device": "Gerät hinzufügen"
+          "add_switch_device": "Schalter-Gerät hinzufügen",
+          "add_numeric_device": "Numerisches Gerät hinzufügen"
         }
       },
       "device_list": {
@@ -56,12 +57,11 @@
           "action": "Aktion"
         }
       },
-      "add_device": {
-        "title": "Gerät hinzufügen",
-        "description": "{info}",
+      "add_switch_device": {
+        "title": "Schalter-Gerät hinzufügen",
+        "description": "Konfigurieren Sie ein neues Schalter-Gerät (Ein/Aus-Steuerung)",
         "data": {
           "name": "Gerätename",
-          "type": "Gerätetyp",
           "priority": "Priorität",
           "power": "Nominalleistung",
           "optimization_enabled": "Optimierung aktiviert",
@@ -74,16 +74,39 @@
         },
         "data_description": {
           "name": "Ein eindeutiger Name für dieses Gerät",
-          "type": "Switch: Ein/Aus-Steuerung | Numeric: Werteanpassung",
           "priority": "1 = höchste Priorität (wird zuerst aktiviert), 10 = niedrigste Priorität",
           "power": "Die Nominalleistung des Geräts in Watt",
           "optimization_enabled": "Ob dieses Gerät vom Optimierer verwaltet werden soll",
           "switch_entity_id": "Die zu steuernde Schalter-Entität",
           "invert_switch": "AUS zum Aktivieren, EIN zum Deaktivieren (für stromlos geschlossene Schalter)",
-          "measured_power_entity_id": "Optional: Sensor für tatsächlichen Stromverbrauch (überschreibt Nominalleistung)",
-          "power_threshold": "Leistungsschwelle in Watt zur Bestimmung ob Gerät EIN ist (bei gemessener Leistung)",
-          "min_on_time": "Gerät muss mindestens so lange eingeschaltet bleiben (verhindert kurze Schaltzyklen)",
-          "min_off_time": "Gerät muss mindestens so lange ausgeschaltet bleiben (verhindert kurze Schaltzyklen)"
+          "measured_power_entity_id": "Optional: Sensor für tatsächlichen Stromverbrauch",
+          "power_threshold": "Leistungsschwelle in Watt zur Bestimmung ob Gerät EIN ist",
+          "min_on_time": "Gerät muss mindestens so lange eingeschaltet bleiben",
+          "min_off_time": "Gerät muss mindestens so lange ausgeschaltet bleiben"
+        }
+      },
+      "add_numeric_device": {
+        "title": "Numerisches Gerät hinzufügen",
+        "description": "Konfigurieren Sie ein neues numerisches Gerät. Nächster Schritt: Numerische Zielwerte konfigurieren (bis zu 5)",
+        "data": {
+          "name": "Gerätename",
+          "priority": "Priorität",
+          "power": "Nominalleistung",
+          "optimization_enabled": "Optimierung aktiviert",
+          "measured_power_entity_id": "Leistungsmesssensor",
+          "power_threshold": "Leistungsschwelle",
+          "min_on_time": "Minimale Einschaltzeit",
+          "min_off_time": "Minimale Ausschaltzeit"
+        },
+        "data_description": {
+          "name": "Ein eindeutiger Name für dieses Gerät",
+          "priority": "1 = höchste Priorität (wird zuerst aktiviert), 10 = niedrigste Priorität",
+          "power": "Die Nominalleistung des Geräts in Watt",
+          "optimization_enabled": "Ob dieses Gerät vom Optimierer verwaltet werden soll",
+          "measured_power_entity_id": "Optional: Sensor für tatsächlichen Stromverbrauch",
+          "power_threshold": "Leistungsschwelle in Watt zur Bestimmung ob Gerät EIN ist",
+          "min_on_time": "Gerät muss mindestens so lange eingeschaltet bleiben",
+          "min_off_time": "Gerät muss mindestens so lange ausgeschaltet bleiben"
         }
       },
       "edit_device": {

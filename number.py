@@ -67,11 +67,14 @@ class PVOptimizerNumber(CoordinatorEntity, NumberEntity):
         self._deactivated_value = target[CONF_DEACTIVATED_VALUE]
         self._attr_name = f"PVO {self._device_name} {self._numeric_entity_id.split('.')[-1]}"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{self._device_name}_{self._numeric_entity_id}"
+        # Get device type for model
+        device_type = self._device.get("type", "Unknown")
+        
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{self._device_name}")},
             "name": f"PVO {self._device_name}",
-            "manufacturer": "Custom",
-            "model": "PV Appliance",
+            "manufacturer": "PV Optimizer",
+            "model": f"{device_type.capitalize()} Device",
         }
         # Set min/max based on activated/deactivated values
         self._attr_min_value = min(self._activated_value, self._deactivated_value)
@@ -105,11 +108,18 @@ class PVOptimizerPriorityNumber(CoordinatorEntity, NumberEntity):
         self._attr_min_value = 1
         self._attr_max_value = 10
         self._attr_step = 1
+        # Get device type for model
+        device_type = "Unknown"
+        for device in coordinator.devices:
+            if device[CONF_NAME] == device_name:
+                device_type = device.get("type", "Unknown")
+                break
+        
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{device_name}")},
             "name": f"PVO {device_name}",
-            "manufacturer": "Custom",
-            "model": "PV Appliance",
+            "manufacturer": "PV Optimizer",
+            "model": f"{device_type.capitalize()} Device",
         }
 
     @property
@@ -148,11 +158,18 @@ class PVOptimizerMinOnTimeNumber(CoordinatorEntity, NumberEntity):
         self._attr_max_value = 1440  # 24 hours in minutes
         self._attr_step = 1
         self._attr_unit_of_measurement = "min"
+        # Get device type for model
+        device_type = "Unknown"
+        for device in coordinator.devices:
+            if device[CONF_NAME] == device_name:
+                device_type = device.get("type", "Unknown")
+                break
+        
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{device_name}")},
             "name": f"PVO {device_name}",
-            "manufacturer": "Custom",
-            "model": "PV Appliance",
+            "manufacturer": "PV Optimizer",
+            "model": f"{device_type.capitalize()} Device",
         }
 
     @property
@@ -188,11 +205,18 @@ class PVOptimizerMinOffTimeNumber(CoordinatorEntity, NumberEntity):
         self._attr_max_value = 1440  # 24 hours in minutes
         self._attr_step = 1
         self._attr_unit_of_measurement = "min"
+        # Get device type for model
+        device_type = "Unknown"
+        for device in coordinator.devices:
+            if device[CONF_NAME] == device_name:
+                device_type = device.get("type", "Unknown")
+                break
+        
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{device_name}")},
             "name": f"PVO {device_name}",
-            "manufacturer": "Custom",
-            "model": "PV Appliance",
+            "manufacturer": "PV Optimizer",
+            "model": f"{device_type.capitalize()} Device",
         }
 
     @property

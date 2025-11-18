@@ -145,7 +145,7 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
         """Show device management menu."""
         return self.async_show_menu(
             step_id="manage_devices",
-            menu_options=["device_list", "add_device"],
+            menu_options=["device_list", "add_switch_device", "add_numeric_device"],
         )
 
     async def async_step_device_list(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:

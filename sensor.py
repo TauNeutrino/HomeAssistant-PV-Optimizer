@@ -79,11 +79,18 @@ class PVOptimizerApplianceSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = f"PVO {device_name} {name}"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_{data_key}"
         self._attr_unit_of_measurement = unit
+        # Get device type for model
+        device_type = "Unknown"
+        for device in coordinator.devices:
+            if device[CONF_NAME] == device_name:
+                device_type = device.get("type", "Unknown")
+                break
+        
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{device_name}")},
             "name": f"PVO {device_name}",
-            "manufacturer": "Custom",
-            "model": "PV Appliance",
+            "manufacturer": "PV Optimizer",
+            "model": f"{device_type.capitalize()} Device",
         }
 
     @property
