@@ -14,6 +14,8 @@ from .const import (
     CONF_NUMERIC_ENTITY_ID,
     CONF_ACTIVATED_VALUE,
     CONF_DEACTIVATED_VALUE,
+    CONF_MEASURED_POWER_ENTITY_ID,
+    CONF_POWER_THRESHOLD,
     TYPE_SWITCH,
     TYPE_NUMERIC,
 )
@@ -82,8 +84,26 @@ class SwitchDevice(PVDevice):
         _LOGGER.debug(f"Deactivated switch device {self.name}: set {self.switch_entity_id} to {target_state}")
 
     def is_on(self) -> bool:
-        """Return True if the switch is on (considering invert flag)."""
+        """Return True if the switch is on (considering invert flag and power threshold)."""
         # This solves the problem of correctly determining device state with potential inversion
+        # and using power threshold when a power sensor is available
+        
+        # First check if we have a power sensor and should use power threshold
+        power_sensor = self.config.get(CONF_MEASURED_POWER_ENTITY_ID)
+        power_threshold = self.config.get(CONF_POWER_THRESHOLD, 100)
+        
+        if power_sensor:
+            power_state = self.hass.states.get(power_sensor)
+            if power_state and power_state.state not in ['unknown', 'unavailable']:
+                try:
+                    current_power = float(power_state.state)
+                    is_on_by_power = current_power > power_threshold
+                    _LOGGER.debug(f"Device {self.name} power-based state: {current_power}W > {power_threshold}W = {is_on_by_power}")
+                    return is_on_by_power
+                except (ValueError, TypeError):
+                    _LOGGER.warning(f"Could not parse power value for {self.name}: {power_state.state}")
+        
+        # Fallback to switch state
         state = self.hass.states.get(self.switch_entity_id)
         if state is None:
             return False
@@ -131,13 +151,36 @@ class NumericDevice(PVDevice):
             _LOGGER.debug(f"Deactivated numeric device {self.name}: set {entity_id} to {value}")
 
     def is_on(self) -> bool:
-        """Return True if any of the numeric targets is at activated value."""
+        """Return True if any of the numeric targets is at activated value or power threshold exceeded."""
         # This solves the problem of determining if a numeric device is 'on' based on target values
+        # or measured power when available
+        
+        # First check if we have a power sensor and should use power threshold
+        power_sensor = self.config.get(CONF_MEASURED_POWER_ENTITY_ID)
+        power_threshold = self.config.get(CONF_POWER_THRESHOLD, 100)
+        
+        if power_sensor:
+            power_state = self.hass.states.get(power_sensor)
+            if power_state and power_state.state not in ['unknown', 'unavailable']:
+                try:
+                    current_power = float(power_state.state)
+                    is_on_by_power = current_power > power_threshold
+                    _LOGGER.debug(f"Device {self.name} power-based state: {current_power}W > {power_threshold}W = {is_on_by_power}")
+                    return is_on_by_power
+                except (ValueError, TypeError):
+                    _LOGGER.warning(f"Could not parse power value for {self.name}: {power_state.state}")
+        
+        # Fallback to checking numeric targets
         for target in self.numeric_targets:
             entity_id = target[CONF_NUMERIC_ENTITY_ID]
             state = self.hass.states.get(entity_id)
-            if state and float(state.state) == target[CONF_ACTIVATED_VALUE]:
-                return True
+            if state and state.state not in ['unknown', 'unavailable']:
+                try:
+                    current_value = float(state.state)
+                    if current_value == target[CONF_ACTIVATED_VALUE]:
+                        return True
+                except (ValueError, TypeError):
+                    continue
         return False
 
     def get_power_consumption(self) -> float:

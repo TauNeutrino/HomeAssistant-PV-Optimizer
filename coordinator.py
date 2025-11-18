@@ -60,6 +60,7 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         self.entity_registry = er.async_get(hass)
         self.device_states = {}  # Cache for device states and timestamps
         self.device_instances = {}  # Cache for device class instances
+        self.device_state_changes = {}  # Track actual state change timestamps
 
     async def async_set_config(self, data: Dict[str, Any]) -> None:
         """Set the global configuration."""
@@ -116,7 +117,7 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         """Aggregate data for each device: measured_power_avg, is_locked, pvo_last_target_state."""
         # This solves the problem of collecting all necessary device state information in one place
         # for use in locking logic, power calculations, and state synchronization.
-        now = datetime.now()
+        now = dt_util.now()
         for device_config in self.devices:
             if not device_config.get(CONF_OPTIMIZATION_ENABLED, True):
                 continue
@@ -132,6 +133,20 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
 
             # Get current state
             is_on = device.is_on()
+
+            # Track state changes with accurate timestamps
+            previous_state = self.device_states.get(device_name, {}).get("is_on")
+            if previous_state is not None and previous_state != is_on:
+                # State changed - record the timestamp
+                if device_name not in self.device_state_changes:
+                    self.device_state_changes[device_name] = {}
+                
+                if is_on:
+                    self.device_state_changes[device_name]["last_on_time"] = now
+                else:
+                    self.device_state_changes[device_name]["last_off_time"] = now
+                
+                _LOGGER.info(f"Device {device_name} state changed to {'ON' if is_on else 'OFF'} at {now}")
 
             # Calculate averaged power over sliding window
             measured_power_avg = await self._get_averaged_power(device_config, now)
@@ -181,32 +196,37 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         # This solves the problem of preventing short-cycling and respecting minimum on/off times.
         device_name = device_config[CONF_NAME]
         state_info = self.device_states.get(device_name, {})
+        state_changes = self.device_state_changes.get(device_name, {})
 
         # Check minimum on time
         if is_on:
             min_on_minutes = device_config.get(CONF_MIN_ON_TIME)
-            if min_on_minutes:
-                # Assume device was turned on at last state change
-                # In a real implementation, track actual timestamps
-                # For now, use a simple heuristic
-                if state_info.get("last_update"):
-                    time_on = (now - state_info["last_update"]).total_seconds() / 60
+            if min_on_minutes and min_on_minutes > 0:
+                # Use actual timestamp of when device was turned on
+                last_on_time = state_changes.get("last_on_time")
+                if last_on_time:
+                    time_on = (now - last_on_time).total_seconds() / 60
                     if time_on < min_on_minutes:
+                        _LOGGER.debug(f"Device {device_name} locked ON: {time_on:.1f}/{min_on_minutes} min")
                         return True
 
         # Check minimum off time
         elif not is_on:
             min_off_minutes = device_config.get(CONF_MIN_OFF_TIME)
-            if min_off_minutes:
-                if state_info.get("last_update"):
-                    time_off = (now - state_info["last_update"]).total_seconds() / 60
+            if min_off_minutes and min_off_minutes > 0:
+                # Use actual timestamp of when device was turned off
+                last_off_time = state_changes.get("last_off_time")
+                if last_off_time:
+                    time_off = (now - last_off_time).total_seconds() / 60
                     if time_off < min_off_minutes:
+                        _LOGGER.debug(f"Device {device_name} locked OFF: {time_off:.1f}/{min_off_minutes} min")
                         return True
 
         # Check for manual intervention
         last_target = state_info.get(ATTR_PVO_LAST_TARGET_STATE)
         if last_target is not None and last_target != is_on:
             # Device state differs from last optimizer target - manual intervention detected
+            _LOGGER.debug(f"Device {device_name} locked: manual intervention detected (target={last_target}, actual={is_on})")
             return True
 
         return False
