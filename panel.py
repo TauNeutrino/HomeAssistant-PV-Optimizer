@@ -7,16 +7,19 @@ from .const import FRONTEND_URL, PANEL_TITLE, PANEL_ICON, PANEL_URL
 
 
 async def async_setup_panel(hass: HomeAssistant):
-    # Serve the PV Optimizer panel and register it
+    """Set up the PV Optimizer panel."""
+    # Serve the JavaScript file
     await hass.http.async_register_static_paths(
         [
             StaticPathConfig(
                 FRONTEND_URL,
                 hass.config.path("custom_components/pv_optimizer/www/pv-optimizer-panel.js"),
-                True,
+                False,  # Don't cache for development
             )
         ]
     )
+    
+    # Register the custom panel
     async_register_built_in_panel(
         hass=hass,
         component_name="custom",
@@ -28,6 +31,8 @@ async def async_setup_panel(hass: HomeAssistant):
             "_panel_custom": {
                 "name": "pv-optimizer-panel",
                 "js_url": FRONTEND_URL,
+                "embed_iframe": False,
+                "trust_external_script": False,
             }
         },
     )

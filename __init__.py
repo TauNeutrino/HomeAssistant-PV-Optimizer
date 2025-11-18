@@ -27,10 +27,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up PV Optimizer from a config entry."""
     # Initialize the coordinator for handling optimization cycles
     coordinator = PVOptimizerCoordinator(hass, entry)
-    await coordinator.async_config_entry_first_refresh()
-
-    # Store the coordinator in hass.data for access by platforms
     hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    await coordinator.async_config_entry_first_refresh()
 
     # Forward setup to platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -57,3 +56,4 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry."""
     await async_unload_entry(hass, entry)
     await async_setup_entry(hass, entry)
+
