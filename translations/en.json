@@ -12,18 +12,101 @@
       }
     },
     "error": {
-      "invalid_entity": "Invalid entity selected."
+      "invalid_entity": "Invalid entity selected.",
+      "duplicate_name": "A device with this name already exists."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "PV Optimizer Options",
-        "description": "Update global settings.",
+        "title": "PV Optimizer",
+        "description": "Choose an option",
+        "menu_options": {
+          "global_config": "Global Configuration",
+          "manage_devices": "Manage Devices"
+        }
+      },
+      "global_config": {
+        "title": "Global Configuration",
+        "description": "Configure global parameters for the PV Optimizer. {info}",
         "data": {
           "surplus_sensor_entity_id": "PV Surplus Sensor",
-          "sliding_window_size": "Sliding Window Size (minutes)",
-          "optimization_cycle_time": "Optimization Cycle Time (seconds)"
+          "sliding_window_size": "Sliding Window Size",
+          "optimization_cycle_time": "Optimization Cycle Time"
+        },
+        "data_description": {
+          "surplus_sensor_entity_id": "The sensor that provides PV surplus/deficit values (negative = surplus)",
+          "sliding_window_size": "Time window for averaging power measurements (1-60 minutes)",
+          "optimization_cycle_time": "How often the optimizer runs (10-300 seconds)"
+        }
+      },
+      "manage_devices": {
+        "title": "Manage Devices",
+        "description": "Manage your controllable devices",
+        "menu_options": {
+          "device_list": "Show Device List",
+          "add_device": "Add Device"
+        }
+      },
+      "device_list": {
+        "title": "Device List",
+        "description": "{info}",
+        "data": {
+          "device": "Device",
+          "action": "Action"
+        }
+      },
+      "add_device": {
+        "title": "Add Device",
+        "description": "{info}",
+        "data": {
+          "name": "Device Name",
+          "type": "Device Type",
+          "priority": "Priority",
+          "power": "Nominal Power",
+          "optimization_enabled": "Optimization Enabled",
+          "switch_entity_id": "Switch Entity",
+          "invert_switch": "Invert Switch Logic",
+          "measured_power_entity_id": "Measured Power Sensor",
+          "power_threshold": "Power Threshold",
+          "min_on_time": "Minimum On Time",
+          "min_off_time": "Minimum Off Time"
+        },
+        "data_description": {
+          "name": "A unique name for this device",
+          "type": "Switch: On/Off control | Numeric: Value adjustment",
+          "priority": "1 = highest priority (activated first), 10 = lowest priority",
+          "power": "The device's nominal power consumption in Watts",
+          "optimization_enabled": "Whether this device should be managed by the optimizer",
+          "switch_entity_id": "The switch entity to control",
+          "invert_switch": "Turn OFF to activate, ON to deactivate (for normally-closed switches)",
+          "measured_power_entity_id": "Optional: Sensor providing actual power consumption (overrides nominal power)",
+          "power_threshold": "Power threshold in Watts to determine if device is ON (when using measured power)",
+          "min_on_time": "Device must stay on for at least this duration (prevents short-cycling)",
+          "min_off_time": "Device must stay off for at least this duration (prevents short-cycling)"
+        }
+      },
+      "edit_device": {
+        "title": "Edit Device",
+        "description": "Editing device: {device_name}. {info}",
+        "data": {
+          "type": "Device Type",
+          "priority": "Priority",
+          "power": "Nominal Power",
+          "optimization_enabled": "Optimization Enabled",
+          "switch_entity_id": "Switch Entity",
+          "invert_switch": "Invert Switch Logic",
+          "measured_power_entity_id": "Measured Power Sensor",
+          "power_threshold": "Power Threshold",
+          "min_on_time": "Minimum On Time",
+          "min_off_time": "Minimum Off Time"
+        }
+      },
+      "confirm_delete": {
+        "title": "Confirm Deletion",
+        "description": "{warning}",
+        "data": {
+          "confirm": "Yes, delete device '{device_name}'"
         }
       }
     }

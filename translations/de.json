@@ -12,18 +12,101 @@
       }
     },
     "error": {
-      "invalid_entity": "Ungültige Entität ausgewählt."
+      "invalid_entity": "Ungültige Entität ausgewählt.",
+      "duplicate_name": "Ein Gerät mit diesem Namen existiert bereits."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "PV Optimizer Optionen",
-        "description": "Globale Einstellungen aktualisieren.",
+        "title": "PV Optimizer",
+        "description": "Wählen Sie eine Option",
+        "menu_options": {
+          "global_config": "Globale Konfiguration",
+          "manage_devices": "Geräte verwalten"
+        }
+      },
+      "global_config": {
+        "title": "Globale Konfiguration",
+        "description": "Konfigurieren Sie globale Parameter für den PV Optimizer. {info}",
         "data": {
           "surplus_sensor_entity_id": "PV-Überschuss-Sensor",
-          "sliding_window_size": "Gleitende Fenstergröße (Minuten)",
-          "optimization_cycle_time": "Optimierungszykluszeit (Sekunden)"
+          "sliding_window_size": "Gleitende Fenstergröße",
+          "optimization_cycle_time": "Optimierungszykluszeit"
+        },
+        "data_description": {
+          "surplus_sensor_entity_id": "Der Sensor, der PV-Überschuss/Defizit liefert (negativ = Überschuss)",
+          "sliding_window_size": "Zeitfenster zur Mittelwertbildung der Leistungsmessung (1-60 Minuten)",
+          "optimization_cycle_time": "Wie oft der Optimierer läuft (10-300 Sekunden)"
+        }
+      },
+      "manage_devices": {
+        "title": "Geräte verwalten",
+        "description": "Verwalten Sie Ihre kontrollierbaren Geräte",
+        "menu_options": {
+          "device_list": "Geräteliste anzeigen",
+          "add_device": "Gerät hinzufügen"
+        }
+      },
+      "device_list": {
+        "title": "Geräteliste",
+        "description": "{info}",
+        "data": {
+          "device": "Gerät",
+          "action": "Aktion"
+        }
+      },
+      "add_device": {
+        "title": "Gerät hinzufügen",
+        "description": "{info}",
+        "data": {
+          "name": "Gerätename",
+          "type": "Gerätetyp",
+          "priority": "Priorität",
+          "power": "Nominalleistung",
+          "optimization_enabled": "Optimierung aktiviert",
+          "switch_entity_id": "Schalter-Entität",
+          "invert_switch": "Schalter-Logik invertieren",
+          "measured_power_entity_id": "Leistungsmesssensor",
+          "power_threshold": "Leistungsschwelle",
+          "min_on_time": "Minimale Einschaltzeit",
+          "min_off_time": "Minimale Ausschaltzeit"
+        },
+        "data_description": {
+          "name": "Ein eindeutiger Name für dieses Gerät",
+          "type": "Switch: Ein/Aus-Steuerung | Numeric: Werteanpassung",
+          "priority": "1 = höchste Priorität (wird zuerst aktiviert), 10 = niedrigste Priorität",
+          "power": "Die Nominalleistung des Geräts in Watt",
+          "optimization_enabled": "Ob dieses Gerät vom Optimierer verwaltet werden soll",
+          "switch_entity_id": "Die zu steuernde Schalter-Entität",
+          "invert_switch": "AUS zum Aktivieren, EIN zum Deaktivieren (für stromlos geschlossene Schalter)",
+          "measured_power_entity_id": "Optional: Sensor für tatsächlichen Stromverbrauch (überschreibt Nominalleistung)",
+          "power_threshold": "Leistungsschwelle in Watt zur Bestimmung ob Gerät EIN ist (bei gemessener Leistung)",
+          "min_on_time": "Gerät muss mindestens so lange eingeschaltet bleiben (verhindert kurze Schaltzyklen)",
+          "min_off_time": "Gerät muss mindestens so lange ausgeschaltet bleiben (verhindert kurze Schaltzyklen)"
+        }
+      },
+      "edit_device": {
+        "title": "Gerät bearbeiten",
+        "description": "Bearbeite Gerät: {device_name}. {info}",
+        "data": {
+          "type": "Gerätetyp",
+          "priority": "Priorität",
+          "power": "Nominalleistung",
+          "optimization_enabled": "Optimierung aktiviert",
+          "switch_entity_id": "Schalter-Entität",
+          "invert_switch": "Schalter-Logik invertieren",
+          "measured_power_entity_id": "Leistungsmesssensor",
+          "power_threshold": "Leistungsschwelle",
+          "min_on_time": "Minimale Einschaltzeit",
+          "min_off_time": "Minimale Ausschaltzeit"
+        }
+      },
+      "confirm_delete": {
+        "title": "Löschen bestätigen",
+        "description": "{warning}",
+        "data": {
+          "confirm": "Ja, Gerät '{device_name}' löschen"
         }
       }
     }
