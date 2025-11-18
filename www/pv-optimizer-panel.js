@@ -1,12 +1,8 @@
 /**
  * PV Optimizer Panel for Home Assistant
  * 
- * This panel provides quick access to device status and shortcuts to
- * the configuration options flow for device management.
- * 
- * All configuration (global settings and device management) is handled
- * through Home Assistant's native config flow system for proper focus
- * handling and native UI components.
+ * Uses HA's fire_event system to properly trigger navigation and
+ * ha-button components to match browser_mod style (no flicker).
  */
 
 class PvOptimizerPanel extends HTMLElement {
@@ -80,18 +76,36 @@ class PvOptimizerPanel extends HTMLElement {
   }
 
   /**
-   * Navigate to integration options flow
+   * Navigate to integration options - uses HA's proper navigation
    */
-  _openOptionsFlow() {
-    // Find PV Optimizer config entry
-    const configEntries = Object.values(this._hass.config_entries || {});
-    const entry = configEntries.find(e => e.domain === 'pv_optimizer');
+  _openConfig() {
+    // Use fire_event to properly navigate
+    const event = new CustomEvent('hass-more-info', {
+      detail: { entityId: null },
+      bubbles: true,
+      composed: true,
+    });
     
-    if (entry) {
-      // Navigate to integration page which will show option button
-      window.history.pushState(null, '', `/config/integrations/integration/pv_optimizer`);
-      const event = new CustomEvent('location-changed');
-      window.dispatchEvent(event);
+    // Find the config entry
+    if (this._hass.config_entries) {
+      const entries = Object.values(this._hass.config_entries);
+      const entry = entries.find(e => e.domain === 'pv_optimizer');
+      
+      if (entry) {
+        // Fire navigation event
+        const navEvent = new CustomEvent('config-entry-options', {
+          detail: { entry_id: entry.entry_id },
+          bubbles: true,
+          composed: true,
+        });
+        this.dispatchEvent(navEvent);
+        
+        // Also try direct navigation as fallback
+        setTimeout(() => {
+          window.history.pushState(null, '', `/config/integrations/config_entry/${entry.entry_id}`);
+          window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
+        }, 100);
+      }
     }
   }
 
@@ -135,6 +149,18 @@ class PvOptimizerPanel extends HTMLElement {
           color: var(--primary-text-color);
         }
 
+        .config-button-container {
+          text-align: center;
+          padding: 32px 20px;
+        }
+
+        /* HA-style button (no flicker) */
+        ha-button {
+          --mdc-theme-primary: var(--primary-color);
+          font-size: 16px;
+          padding: 8px 24px;
+        }
+
         .config-group {
           margin-bottom: 16px;
         }
@@ -151,29 +177,6 @@ class PvOptimizerPanel extends HTMLElement {
           border-radius: 4px;
           font-family: monospace;
           font-size: 13px;
-        }
-
-        button {
-          background-color: var(--primary-color);
-          color: white;
-          border: none;
-          padding: 10px 20px;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 500;
-          transition: all 0.2s;
-        }
-
-        button:hover {
-          background-color: var(--primary-color-dark, #0288d1);
-          transform: translateY(-1px);
-          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        }
-
-        button.large {
-          padding: 16px 32px;
-          font-size: 16px;
         }
 
         .device-list {
@@ -243,11 +246,6 @@ class PvOptimizerPanel extends HTMLElement {
           font-size: 14px;
           line-height: 1.5;
         }
-
-        .config-button-container {
-          text-align: center;
-          padding: 32px 20px;
-        }
       </style>
     `;
 
@@ -258,7 +256,9 @@ class PvOptimizerPanel extends HTMLElement {
         <div class="card">
           <div class="error">
             <strong>Error:</strong> ${this._error}
-            <div><button onclick="location.reload()" style="margin-top: 12px;">Refresh Page</button></div>
+            <div style="margin-top: 12px;">
+              <ha-button onclick="location.reload()">Refresh Page</ha-button>
+            </div>
           </div>
         </div>
       `;
@@ -286,17 +286,18 @@ class PvOptimizerPanel extends HTMLElement {
       <div class="info-box">
         <div class="info-title">ℹ️ Configuration via Options Flow</div>
         <div class="info-text">
-          All configuration (global settings and device management) is now handled through 
+          All configuration (global settings and device management) is handled through 
           Home Assistant's native configuration interface. Click the button below to access 
-          the configuration menu with proper native dialogs, entity selectors, and focus handling.
+          the configuration menu.
         </div>
       </div>
 
       <div class="card">
         <div class="config-button-container">
-          <button class="large" id="open-config-btn">
-            ⚙️ Open Configuration
-          </button>
+          <ha-button raised id="open-config-btn">
+            <ha-icon icon="mdi:cog"></ha-icon>
+            Open Configuration
+          </ha-button>
           <div style="margin-top: 12px; color: var(--secondary-text-color); font-size: 14px;">
             Configure global settings • Manage devices • Add/Edit/Delete
           </div>
@@ -348,9 +349,10 @@ class PvOptimizerPanel extends HTMLElement {
               <div style="font-size: 14px; margin-bottom: 16px;">
                 Click "Open Configuration" above to add your first device
               </div>
-              <button onclick="this.getRootNode().host._openOptionsFlow()">
-                ➕ Add First Device
-              </button>
+              <ha-button id="add-first-device-btn">
+                <ha-icon icon="mdi:plus"></ha-icon>
+                Add First Device
+              </ha-button>
             </div>
           ` : `
             <div class="device-list">
@@ -388,7 +390,12 @@ class PvOptimizerPanel extends HTMLElement {
   _attachEventListeners() {
     const openConfigBtn = this.shadowRoot.querySelector('#open-config-btn');
     if (openConfigBtn) {
-      openConfigBtn.addEventListener('click', () => this._openOptionsFlow());
+      openConfigBtn.addEventListener('click', () => this._openConfig());
+    }
+
+    const addFirstBtn = this.shadowRoot.querySelector('#add-first-device-btn');
+    if (addFirstBtn) {
+      addFirstBtn.addEventListener('click', () => this._openConfig());
     }
   }
 }

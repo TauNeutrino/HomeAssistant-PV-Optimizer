@@ -108,6 +108,44 @@
         "data": {
           "confirm": "Yes, delete device '{device_name}'"
         }
+      },
+      "numeric_targets": {
+        "title": "Numeric Targets",
+        "description": "{info}",
+        "data": {
+          "target_1_entity": "Target 1: Entity",
+          "target_1_on": "Target 1: Activated Value",
+          "target_1_off": "Target 1: Deactivated Value",
+          "target_2_entity": "Target 2: Entity",
+          "target_2_on": "Target 2: Activated Value",
+          "target_2_off": "Target 2: Deactivated Value",
+          "target_3_entity": "Target 3: Entity",
+          "target_3_on": "Target 3: Activated Value",
+          "target_3_off": "Target 3: Deactivated Value",
+          "target_4_entity": "Target 4: Entity",
+          "target_4_on": "Target 4: Activated Value",
+          "target_4_off": "Target 4: Deactivated Value",
+          "target_5_entity": "Target 5: Entity",
+          "target_5_on": "Target 5: Activated Value",
+          "target_5_off": "Target 5: Deactivated Value"
+        },
+        "data_description": {
+          "target_1_entity": "Number/Input Number entity to control",
+          "target_1_on": "Value when device is activated",
+          "target_1_off": "Value when device is deactivated",
+          "target_2_entity": "Optional: Second entity to control",
+          "target_2_on": "Value when device is activated",
+          "target_2_off": "Value when device is deactivated",
+          "target_3_entity": "Optional: Third entity to control",
+          "target_3_on": "Value when device is activated",
+          "target_3_off": "Value when device is deactivated",
+          "target_4_entity": "Optional: Fourth entity to control",
+          "target_4_on": "Value when device is activated",
+          "target_4_off": "Value when device is deactivated",
+          "target_5_entity": "Optional: Fifth entity to control",
+          "target_5_on": "Value when device is activated",
+          "target_5_off": "Value when device is deactivated"
+        }
       }
     }
   }

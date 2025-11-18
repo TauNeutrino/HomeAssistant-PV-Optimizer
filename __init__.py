@@ -7,6 +7,7 @@ from .const import DOMAIN
 from .coordinator import PVOptimizerCoordinator
 from .panel import async_setup_panel
 from .connection import async_setup_connection
+from .device_registry import async_setup_devices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,6 +26,9 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up PV Optimizer from a config entry."""
+    # Set up devices in device registry
+    await async_setup_devices(hass, entry)
+    
     # Initialize the coordinator for handling optimization cycles
     coordinator = PVOptimizerCoordinator(hass, entry)
     hass.data[DOMAIN][entry.entry_id] = coordinator

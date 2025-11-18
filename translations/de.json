@@ -108,6 +108,44 @@
         "data": {
           "confirm": "Ja, Gerät '{device_name}' löschen"
         }
+      },
+      "numeric_targets": {
+        "title": "Numerische Zielwerte",
+        "description": "{info}",
+        "data": {
+          "target_1_entity": "Ziel 1: Entität",
+          "target_1_on": "Ziel 1: Eingeschaltet-Wert",
+          "target_1_off": "Ziel 1: Ausgeschaltet-Wert",
+          "target_2_entity": "Ziel 2: Entität",
+          "target_2_on": "Ziel 2: Eingeschaltet-Wert",
+          "target_2_off": "Ziel 2: Ausgeschaltet-Wert",
+          "target_3_entity": "Ziel 3: Entität",
+          "target_3_on": "Ziel 3: Eingeschaltet-Wert",
+          "target_3_off": "Ziel 3: Ausgeschaltet-Wert",
+          "target_4_entity": "Ziel 4: Entität",
+          "target_4_on": "Ziel 4: Eingeschaltet-Wert",
+          "target_4_off": "Ziel 4: Ausgeschaltet-Wert",
+          "target_5_entity": "Ziel 5: Entität",
+          "target_5_on": "Ziel 5: Eingeschaltet-Wert",
+          "target_5_off": "Ziel 5: Ausgeschaltet-Wert"
+        },
+        "data_description": {
+          "target_1_entity": "Number/Input Number Entität zum Steuern",
+          "target_1_on": "Wert wenn Gerät aktiviert ist",
+          "target_1_off": "Wert wenn Gerät deaktiviert ist",
+          "target_2_entity": "Optional: Zweite Entität zum Steuern",
+          "target_2_on": "Wert wenn Gerät aktiviert ist",
+          "target_2_off": "Wert wenn Gerät deaktiviert ist",
+          "target_3_entity": "Optional: Dritte Entität zum Steuern",
+          "target_3_on": "Wert wenn Gerät aktiviert ist",
+          "target_3_off": "Wert wenn Gerät deaktiviert ist",
+          "target_4_entity": "Optional: Vierte Entität zum Steuern",
+          "target_4_on": "Wert wenn Gerät aktiviert ist",
+          "target_4_off": "Wert wenn Gerät deaktiviert ist",
+          "target_5_entity": "Optional: Fünfte Entität zum Steuern",
+          "target_5_on": "Wert wenn Gerät aktiviert ist",
+          "target_5_off": "Wert wenn Gerät deaktiviert ist"
+        }
       }
     }
   }

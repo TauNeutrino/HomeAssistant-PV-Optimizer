@@ -20,6 +20,9 @@ from .const import (
     CONF_POWER,
     CONF_SWITCH_ENTITY_ID,
     CONF_NUMERIC_TARGETS,
+    CONF_NUMERIC_ENTITY_ID,
+    CONF_ACTIVATED_VALUE,
+    CONF_DEACTIVATED_VALUE,
     CONF_MIN_ON_TIME,
     CONF_MIN_OFF_TIME,
     CONF_OPTIMIZATION_ENABLED,
@@ -86,6 +89,7 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
         self.config_entry = config_entry
         self._device_to_edit = None
         self._device_to_delete = None
+        self._device_base_config = None  # Stores base config before numeric targets step
 
     async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Manage the options - show menu."""
@@ -223,15 +227,18 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
                 if user_input[CONF_TYPE] == TYPE_SWITCH:
                     device_config[CONF_SWITCH_ENTITY_ID] = user_input[CONF_SWITCH_ENTITY_ID]
                     device_config[CONF_INVERT_SWITCH] = user_input.get(CONF_INVERT_SWITCH, False)
+                    
+                    # Save switch device directly
+                    new_data = dict(self.config_entry.data)
+                    new_data["devices"].append(device_config)
+                    self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+                    
+                    return self.async_create_entry(title="", data={})
+                    
                 elif user_input[CONF_TYPE] == TYPE_NUMERIC:
-                    # For now, numeric targets need to be configured via YAML
-                    device_config[CONF_NUMERIC_TARGETS] = []
-
-                new_data = dict(self.config_entry.data)
-                new_data["devices"].append(device_config)
-                self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-                
-                return self.async_create_entry(title="", data={})
+                    # Store base config and move to numeric targets step
+                    self._device_base_config = device_config
+                    return await self.async_step_numeric_targets()
 
         # Build dynamic schema based on device type
         device_type = user_input.get(CONF_TYPE, TYPE_SWITCH) if user_input else TYPE_SWITCH
@@ -294,12 +301,72 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
             ),
         })
 
+        description = "Configure a new controllable device."
+        if device_type == TYPE_NUMERIC:
+            description += " After clicking Next, you'll configure numeric targets."
+
         return self.async_show_form(
             step_id="add_device",
             data_schema=vol.Schema(base_schema),
             errors=errors,
             description_placeholders={
-                "info": "Configure a new controllable device. For numeric devices, targets must be configured via YAML after initial creation."
+                "info": description
+            }
+        )
+
+    async def async_step_numeric_targets(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Configure numeric targets (max 5)."""
+        if user_input is not None:
+            # Collect non-empty targets
+            targets = []
+            for i in range(1, 6):
+                entity = user_input.get(f"target_{i}_entity")
+                if entity:  # Only add if entity is specified
+                    targets.append({
+                        CONF_NUMERIC_ENTITY_ID: entity,
+                        CONF_ACTIVATED_VALUE: user_input.get(f"target_{i}_on", 0),
+                        CONF_DEACTIVATED_VALUE: user_input.get(f"target_{i}_off", 0),
+                    })
+            
+            # Add targets to device config
+            self._device_base_config[CONF_NUMERIC_TARGETS] = targets
+            
+            # Save device
+            new_data = dict(self.config_entry.data)
+            new_data["devices"].append(self._device_base_config)
+            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+            
+            self._device_base_config = None
+            return self.async_create_entry(title="", data={})
+
+        # Get existing targets if editing
+        existing_targets = []
+        if self._device_to_edit:
+            devices = self.config_entry.data.get("devices", [])
+            device = next((d for d in devices if d[CONF_NAME] == self._device_to_edit), None)
+            if device:
+                existing_targets = device.get(CONF_NUMERIC_TARGETS, [])
+
+        # Build schema for 5 targets
+        schema = {}
+        for i in range(1, 6):
+            target = existing_targets[i-1] if i-1 < len(existing_targets) else {}
+            
+            schema[vol.Optional(f"target_{i}_entity", default=target.get(CONF_NUMERIC_ENTITY_ID, ''))] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=["number", "input_number"]),
+            )
+            schema[vol.Optional(f"target_{i}_on", default=target.get(CONF_ACTIVATED_VALUE, 0))] = selector.NumberSelector(
+                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX, step="any"),
+            )
+            schema[vol.Optional(f"target_{i}_off", default=target.get(CONF_DEACTIVATED_VALUE, 0))] = selector.NumberSelector(
+                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX, step="any"),
+            )
+
+        return self.async_show_form(
+            step_id="numeric_targets",
+            data_schema=vol.Schema(schema),
+            description_placeholders={
+                "info": "Configure up to 5 numeric targets. Leave entity empty to skip. For each target, specify the entity and values for activated (ON) and deactivated (OFF) states."
             }
         )
 
@@ -328,18 +395,21 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
             if user_input[CONF_TYPE] == TYPE_SWITCH:
                 device_config[CONF_SWITCH_ENTITY_ID] = user_input[CONF_SWITCH_ENTITY_ID]
                 device_config[CONF_INVERT_SWITCH] = user_input.get(CONF_INVERT_SWITCH, False)
+                
+                # Replace device in list
+                new_data = dict(self.config_entry.data)
+                device_index = next(i for i, d in enumerate(new_data["devices"]) if d[CONF_NAME] == self._device_to_edit)
+                new_data["devices"][device_index] = device_config
+                self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+                
+                self._device_to_edit_name = self._device_to_edit
+                self._device_to_edit = None
+                return self.async_create_entry(title="", data={})
+                
             elif user_input[CONF_TYPE] == TYPE_NUMERIC:
-                # Preserve existing numeric targets
-                device_config[CONF_NUMERIC_TARGETS] = device_to_edit.get(CONF_NUMERIC_TARGETS, [])
-
-            # Replace device in list
-            new_data = dict(self.config_entry.data)
-            device_index = next(i for i, d in enumerate(new_data["devices"]) if d[CONF_NAME] == self._device_to_edit)
-            new_data["devices"][device_index] = device_config
-            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-            
-            self._device_to_edit = None
-            return self.async_create_entry(title="", data={})
+                # Store base config and move to numeric targets step
+                self._device_base_config = device_config
+                return await self.async_step_numeric_targets()
 
         # Build schema with current values
         device_type = device_to_edit.get(CONF_TYPE, TYPE_SWITCH)
