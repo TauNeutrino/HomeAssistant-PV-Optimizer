@@ -2,13 +2,12 @@
  * PV Optimizer Panel for Home Assistant
  * 
  * This panel provides a user interface for managing the PV Optimizer integration.
- * It uses Home Assistant's native dialog system and form selectors for optimal
- * compatibility and user experience.
+ * Uses custom dialogs with proper focus management and HA styling.
  * 
  * Features:
  * - Global configuration management
  * - Device management (add, edit, delete)
- * - Native HA dialogs and selectors
+ * - Proper dialog focus handling (no cursor blinking)
  * - Full dark mode support
  * - Real-time device status monitoring
  */
@@ -25,6 +24,10 @@ class PvOptimizerPanel extends HTMLElement {
     this._config = null;              // Configuration from backend
     this._error = null;               // Error message if any
     this._loading = true;             // Loading state
+    this._showingGlobalDialog = false;  // Is global config dialog open?
+    this._showingDeviceDialog = false;  // Is device dialog open?
+    this._editingDevice = null;       // Device being edited (null for add)
+    this._dialogData = {};            // Current dialog form data
   }
 
   /**
@@ -116,87 +119,29 @@ class PvOptimizerPanel extends HTMLElement {
   }
 
   /**
-   * Show Home Assistant's native dialog for editing global configuration
-   * Uses HA's form dialog with native selectors
+   * Show dialog for editing global configuration
    */
-  _showEditGlobalDialog() {
+  _showGlobalDialog() {
     const globalConfig = this._config?.global_config || {};
+    this._dialogData = { ...globalConfig };
+    this._showingGlobalDialog = true;
+    this.render();
     
-    // Define form schema using HA's selector system
-    const schema = [
-      {
-        name: 'surplus_sensor_entity_id',
-        required: true,
-        selector: {
-          entity: {
-            domain: 'sensor',
-            device_class: 'power',
-          }
-        }
-      },
-      {
-        name: 'sliding_window_size',
-        required: true,
-        default: 5,
-        selector: {
-          number: {
-            min: 1,
-            max: 60,
-            unit_of_measurement: 'minutes',
-          }
-        }
-      },
-      {
-        name: 'optimization_cycle_time',
-        required: true,
-        default: 60,
-        selector: {
-          number: {
-            min: 10,
-            max: 300,
-            unit_of_measurement: 'seconds',
-          }
-        }
-      }
-    ];
-
-    // Fire event to show HA's native form dialog
-    this._showFormDialog({
-      title: 'Edit Global Configuration',
-      schema: schema,
-      data: globalConfig,
-      computeLabel: (schema) => {
-        // Generate user-friendly labels
-        const labels = {
-          'surplus_sensor_entity_id': 'PV Surplus Sensor',
-          'sliding_window_size': 'Sliding Window Size',
-          'optimization_cycle_time': 'Optimization Cycle Time',
-        };
-        return labels[schema.name] || schema.name;
-      },
-      computeHelper: (schema) => {
-        // Generate helpful descriptions
-        const helpers = {
-          'surplus_sensor_entity_id': 'The sensor that provides PV surplus/deficit values (negative = surplus)',
-          'sliding_window_size': 'Time window for averaging power measurements to smooth fluctuations',
-          'optimization_cycle_time': 'How often the optimization algorithm runs',
-        };
-        return helpers[schema.name];
-      },
-      submit: async (data) => {
-        await this._saveGlobalConfig(data);
-      }
-    });
+    // Focus first input after render
+    setTimeout(() => {
+      const firstInput = this.shadowRoot.querySelector('.dialog input, .dialog select');
+      if (firstInput) firstInput.focus();
+    }, 100);
   }
 
   /**
-   * Show Home Assistant's native dialog for adding/editing a device
+   * Show dialog for adding/editing a device
    * 
    * @param {Object} deviceData - Existing device data (null for new device)
    */
   _showDeviceDialog(deviceData = null) {
-    const isEdit = !!deviceData;
-    const device = isEdit ? deviceData.config : {
+    this._editingDevice = deviceData;
+    this._dialogData = deviceData ? { ...deviceData.config } : {
       name: '',
       type: 'switch',
       priority: 5,
@@ -210,238 +155,52 @@ class PvOptimizerPanel extends HTMLElement {
       min_off_time: 0,
       numeric_targets: [],
     };
-
-    // Define form schema - will be dynamically updated based on device type
-    let schema = [
-      {
-        name: 'name',
-        required: true,
-        disabled: isEdit, // Name cannot be changed when editing
-        selector: { text: {} }
-      },
-      {
-        name: 'type',
-        required: true,
-        selector: {
-          select: {
-            options: [
-              { value: 'switch', label: 'Switch (On/Off Control)' },
-              { value: 'numeric', label: 'Numeric (Value Adjustment)' }
-            ]
-          }
-        }
-      },
-      {
-        name: 'priority',
-        required: true,
-        selector: {
-          number: {
-            min: 1,
-            max: 10,
-            mode: 'box',
-          }
-        }
-      },
-      {
-        name: 'power',
-        required: true,
-        selector: {
-          number: {
-            min: 0,
-            step: 0.1,
-            unit_of_measurement: 'W',
-            mode: 'box',
-          }
-        }
-      },
-      {
-        name: 'optimization_enabled',
-        selector: { boolean: {} }
-      },
-    ];
-
-    // Add type-specific fields
-    if (device.type === 'switch') {
-      schema.push(
-        {
-          name: 'switch_entity_id',
-          required: true,
-          selector: {
-            entity: {
-              domain: 'switch',
-            }
-          }
-        },
-        {
-          name: 'invert_switch',
-          selector: { boolean: {} }
-        }
-      );
-    } else if (device.type === 'numeric') {
-      // For numeric devices, we'll handle targets separately
-      // as they require a more complex UI (multiple targets)
-      schema.push({
-        name: 'numeric_targets_info',
-        selector: { 
-          text: { 
-            disabled: true,
-            type: 'text',
-          } 
-        }
-      });
-    }
-
-    // Add common optional fields
-    schema.push(
-      {
-        name: 'measured_power_entity_id',
-        selector: {
-          entity: {
-            domain: 'sensor',
-            device_class: 'power',
-          }
-        }
-      },
-      {
-        name: 'power_threshold',
-        selector: {
-          number: {
-            min: 0,
-            step: 0.1,
-            unit_of_measurement: 'W',
-            mode: 'box',
-          }
-        }
-      },
-      {
-        name: 'min_on_time',
-        selector: {
-          number: {
-            min: 0,
-            unit_of_measurement: 'minutes',
-            mode: 'box',
-          }
-        }
-      },
-      {
-        name: 'min_off_time',
-        selector: {
-          number: {
-            min: 0,
-            unit_of_measurement: 'minutes',
-            mode: 'box',
-          }
-        }
-      }
-    );
-
-    // Show the form dialog
-    this._showFormDialog({
-      title: isEdit ? `Edit Device: ${device.name}` : 'Add New Device',
-      schema: schema,
-      data: device,
-      computeLabel: (schema) => {
-        const labels = {
-          'name': 'Device Name',
-          'type': 'Device Type',
-          'priority': 'Priority',
-          'power': 'Nominal Power',
-          'optimization_enabled': 'Optimization Enabled',
-          'switch_entity_id': 'Switch Entity',
-          'invert_switch': 'Invert Switch Logic',
-          'numeric_targets_info': 'Numeric Targets',
-          'measured_power_entity_id': 'Measured Power Sensor',
-          'power_threshold': 'Power Threshold',
-          'min_on_time': 'Minimum On Time',
-          'min_off_time': 'Minimum Off Time',
-        };
-        return labels[schema.name] || schema.name;
-      },
-      computeHelper: (schema) => {
-        const helpers = {
-          'name': 'A unique name for this device',
-          'type': 'Switch: On/Off control | Numeric: Value adjustment',
-          'priority': '1 = highest priority (activated first), 10 = lowest priority',
-          'power': "The device's nominal power consumption in Watts",
-          'optimization_enabled': 'Whether this device should be managed by the optimizer',
-          'switch_entity_id': 'The switch entity to control',
-          'invert_switch': 'Turn OFF to activate device, ON to deactivate (for normally-closed switches)',
-          'numeric_targets_info': 'Note: Numeric targets must be configured via YAML for now. This will be improved in a future version.',
-          'measured_power_entity_id': 'Optional: Sensor providing actual power consumption (overrides nominal power)',
-          'power_threshold': 'Power threshold in Watts to determine if device is ON (when using measured power)',
-          'min_on_time': 'Device must stay on for at least this duration (prevents short-cycling)',
-          'min_off_time': 'Device must stay off for at least this duration (prevents short-cycling)',
-        };
-        return helpers[schema.name];
-      },
-      submit: async (data) => {
-        // Preserve numeric_targets if editing
-        if (isEdit && device.numeric_targets) {
-          data.numeric_targets = device.numeric_targets;
-        }
-        
-        // Remove info field (not actual config)
-        delete data.numeric_targets_info;
-        
-        if (isEdit) {
-          await this._updateDevice(device.name, data);
-        } else {
-          await this._addDevice(data);
-        }
-      }
-    });
+    this._showingDeviceDialog = true;
+    this.render();
+    
+    // Focus first input after render
+    setTimeout(() => {
+      const firstInput = this.shadowRoot.querySelector('.dialog input:not([readonly]), .dialog select');
+      if (firstInput) firstInput.focus();
+    }, 100);
   }
 
   /**
-   * Helper function to show HA's native form dialog
-   * This uses Home Assistant's event system to display forms
-   * 
-   * @param {Object} options - Dialog configuration
-   * @param {string} options.title - Dialog title
-   * @param {Array} options.schema - Form schema (HA selector format)
-   * @param {Object} options.data - Initial form data
-   * @param {Function} options.computeLabel - Function to compute field labels
-   * @param {Function} options.computeHelper - Function to compute helper text
-   * @param {Function} options.submit - Callback when form is submitted
+   * Close all dialogs
    */
-  _showFormDialog({ title, schema, data, computeLabel, computeHelper, submit }) {
-    // Fire custom event that HA listens for
-    const event = new CustomEvent('show-dialog', {
-      detail: {
-        dialogTag: 'ha-form-dialog',
-        dialogImport: () => import('https://www.home-assistant.io/static/frontend/2024.11.0/chunk.78cbf8d77f5b0ea11db6.js'),
-        dialogParams: {
-          title: title,
-          schema: schema,
-          data: data,
-          computeLabel: computeLabel,
-          computeHelper: computeHelper,
-          submit: submit,
-        },
-      },
-      bubbles: true,
-      composed: true,
-    });
-    
-    this.dispatchEvent(event);
+  _closeDialog() {
+    this._showingGlobalDialog = false;
+    this._showingDeviceDialog = false;
+    this._editingDevice = null;
+    this._dialogData = {};
+    this.render();
+  }
+
+  /**
+   * Handle form input change
+   * @param {string} field - Field name
+   * @param {any} value - New value
+   */
+  _updateDialogData(field, value) {
+    this._dialogData[field] = value;
+    // Re-render if type changes (shows different fields)
+    if (field === 'type') {
+      this.render();
+    }
   }
 
   /**
    * Save global configuration to backend
-   * 
-   * @param {Object} config - Global configuration object
    */
-  async _saveGlobalConfig(config) {
+  async _saveGlobalConfig() {
     try {
       await this._hass.callWS({
         type: 'pv_optimizer/set_config',
-        data: config,
+        data: this._dialogData,
       });
       
-      // Reload configuration from backend
+      this._closeDialog();
       await this._getConfigWithRetry();
-      
-      // Show success toast
       this._showToast('Global configuration saved successfully');
     } catch (error) {
       console.error('Failed to save global config:', error);
@@ -450,61 +209,40 @@ class PvOptimizerPanel extends HTMLElement {
   }
 
   /**
-   * Add a new device via backend API
-   * 
-   * @param {Object} deviceConfig - Device configuration object
+   * Add or update device
    */
-  async _addDevice(deviceConfig) {
+  async _saveDevice() {
+    const isEdit = !!this._editingDevice;
+    
     try {
-      await this._hass.callWS({
-        type: 'pv_optimizer/add_device',
-        device: deviceConfig,
-      });
+      if (isEdit) {
+        await this._hass.callWS({
+          type: 'pv_optimizer/update_device',
+          device_name: this._editingDevice.config.name,
+          device: this._dialogData,
+        });
+        this._showToast('Device updated successfully');
+      } else {
+        await this._hass.callWS({
+          type: 'pv_optimizer/add_device',
+          device: this._dialogData,
+        });
+        this._showToast('Device added successfully');
+      }
       
-      // Reload configuration
+      this._closeDialog();
       await this._getConfigWithRetry();
-      
-      // Show success toast
-      this._showToast('Device added successfully');
     } catch (error) {
-      console.error('Failed to add device:', error);
-      this._showToast(`Failed to add device: ${error.message}`);
+      console.error('Failed to save device:', error);
+      this._showToast(`Failed to save device: ${error.message}`);
     }
   }
 
   /**
-   * Update an existing device via backend API
-   * 
-   * @param {string} deviceName - Name of device to update
-   * @param {Object} deviceConfig - New device configuration
-   */
-  async _updateDevice(deviceName, deviceConfig) {
-    try {
-      await this._hass.callWS({
-        type: 'pv_optimizer/update_device',
-        device_name: deviceName,
-        device: deviceConfig,
-      });
-      
-      // Reload configuration
-      await this._getConfigWithRetry();
-      
-      // Show success toast
-      this._showToast('Device updated successfully');
-    } catch (error) {
-      console.error('Failed to update device:', error);
-      this._showToast(`Failed to update device: ${error.message}`);
-    }
-  }
-
-  /**
-   * Delete a device via backend API
-   * Asks for user confirmation before deleting
-   * 
+   * Delete a device
    * @param {string} deviceName - Name of device to delete
    */
   async _deleteDevice(deviceName) {
-    // Confirm deletion
     if (!confirm(`Are you sure you want to delete device "${deviceName}"?`)) {
       return;
     }
@@ -515,10 +253,7 @@ class PvOptimizerPanel extends HTMLElement {
         device_name: deviceName,
       });
       
-      // Reload configuration
       await this._getConfigWithRetry();
-      
-      // Show success toast
       this._showToast('Device deleted successfully');
     } catch (error) {
       console.error('Failed to delete device:', error);
@@ -527,8 +262,7 @@ class PvOptimizerPanel extends HTMLElement {
   }
 
   /**
-   * Show a toast notification using HA's notification system
-   * 
+   * Show a toast notification
    * @param {string} message - Message to display
    */
   _showToast(message) {
@@ -541,34 +275,40 @@ class PvOptimizerPanel extends HTMLElement {
   }
 
   /**
+   * Get list of entities for domain
+   * @param {string} domain - Entity domain (e.g., 'switch', 'sensor')
+   * @returns {Array} List of entities
+   */
+  _getEntities(domain) {
+    if (!this._hass?.states) return [];
+    
+    return Object.keys(this._hass.states)
+      .filter(entity_id => entity_id.startsWith(domain + '.'))
+      .sort();
+  }
+
+  /**
    * Main render function - updates the Shadow DOM with current state
-   * Called whenever state changes
    */
   render() {
     if (!this.shadowRoot) return;
 
-    // Define CSS styles (using HA CSS variables for theme support)
+    // CSS styles with HA variables for theme support
     const styles = `
       <style>
-        /* Base host styles */
         :host {
           display: block;
           padding: 16px;
           background-color: var(--primary-background-color);
         }
 
-        /* Header styling */
         .header {
           font-size: 24px;
           font-weight: 500;
           margin-bottom: 24px;
           color: var(--primary-text-color);
-          display: flex;
-          align-items: center;
-          gap: 12px;
         }
 
-        /* Card container (uses HA card styling) */
         .card {
           background-color: var(--ha-card-background, var(--card-background-color, white));
           border-radius: var(--ha-card-border-radius, 12px);
@@ -577,7 +317,6 @@ class PvOptimizerPanel extends HTMLElement {
           margin-bottom: 20px;
         }
 
-        /* Card header with action buttons */
         .card-header {
           display: flex;
           justify-content: space-between;
@@ -588,12 +327,10 @@ class PvOptimizerPanel extends HTMLElement {
           color: var(--primary-text-color);
         }
 
-        /* Card content area */
         .card-content {
           color: var(--primary-text-color);
         }
 
-        /* Configuration group (label + value pair) */
         .config-group {
           margin-bottom: 16px;
         }
@@ -612,7 +349,6 @@ class PvOptimizerPanel extends HTMLElement {
           font-size: 13px;
         }
 
-        /* Button styling (HA theme colors) */
         button {
           background-color: var(--primary-color);
           color: white;
@@ -637,13 +373,15 @@ class PvOptimizerPanel extends HTMLElement {
           background-color: #d32f2f;
         }
 
-        /* Device list grid */
+        button.secondary {
+          background-color: var(--secondary-text-color);
+        }
+
         .device-list {
           display: grid;
           gap: 12px;
         }
 
-        /* Individual device card */
         .device-card {
           background-color: var(--card-background-color);
           border: 1px solid var(--divider-color);
@@ -665,7 +403,6 @@ class PvOptimizerPanel extends HTMLElement {
           margin-bottom: 8px;
         }
 
-        /* Device details grid */
         .device-details {
           display: grid;
           grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -674,20 +411,17 @@ class PvOptimizerPanel extends HTMLElement {
           color: var(--secondary-text-color);
         }
 
-        /* Device action buttons */
         .device-actions {
           display: flex;
           gap: 8px;
         }
 
-        /* Empty state when no devices configured */
         .empty-state {
           text-align: center;
           padding: 40px 20px;
           color: var(--secondary-text-color);
         }
 
-        /* Error message styling */
         .error {
           color: var(--error-color);
           background-color: rgba(244, 67, 54, 0.1);
@@ -697,11 +431,117 @@ class PvOptimizerPanel extends HTMLElement {
           border-left: 4px solid var(--error-color);
         }
 
-        /* Loading state styling */
         .loading {
           text-align: center;
           padding: 20px;
           color: var(--secondary-text-color);
+        }
+
+        /* Dialog styles */
+        .dialog-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background-color: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+        }
+
+        .dialog {
+          background-color: var(--ha-card-background, var(--card-background-color, white));
+          border-radius: 8px;
+          padding: 24px;
+          max-width: 600px;
+          width: calc(100% - 32px);
+          max-height: 90vh;
+          overflow-y: auto;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+
+        .dialog-header {
+          font-size: 20px;
+          font-weight: 600;
+          margin-bottom: 20px;
+          color: var(--primary-text-color);
+        }
+
+        .dialog-content {
+          color: var(--primary-text-color);
+        }
+
+        .dialog-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 12px;
+          margin-top: 20px;
+          padding-top: 20px;
+          border-top: 1px solid var(--divider-color);
+        }
+
+        .form-group {
+          margin-bottom: 16px;
+        }
+
+        label {
+          display: block;
+          margin-bottom: 6px;
+          color: var(--primary-text-color);
+          font-weight: 500;
+          font-size: 14px;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        select {
+          width: 100%;
+          padding: 10px;
+          border: 1px solid var(--divider-color);
+          border-radius: 4px;
+          background-color: var(--primary-background-color);
+          color: var(--primary-text-color);
+          font-size: 14px;
+          box-sizing: border-box;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+          outline: none;
+          border-color: var(--primary-color);
+          box-shadow: 0 0 0 2px rgba(var(--rgb-primary-color, 3, 169, 244), 0.2);
+        }
+
+        input[readonly] {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        input[type="checkbox"] {
+          width: 18px;
+          height: 18px;
+          margin-right: 8px;
+        }
+
+        .checkbox-group {
+          display: flex;
+          align-items: center;
+          margin-bottom: 16px;
+        }
+
+        .checkbox-group label {
+          margin-bottom: 0;
+          cursor: pointer;
+        }
+
+        .help-text {
+          font-size: 12px;
+          color: var(--secondary-text-color);
+          margin-top: 4px;
+          font-style: italic;
         }
       </style>
     `;
@@ -733,7 +573,6 @@ class PvOptimizerPanel extends HTMLElement {
       return;
     }
 
-    // Extract configuration data
     const globalConfig = this._config?.global_config || {};
     const devices = this._config?.devices || [];
 
@@ -744,17 +583,15 @@ class PvOptimizerPanel extends HTMLElement {
       
       ${this._renderGlobalConfig(globalConfig)}
       ${this._renderDeviceList(devices)}
+      ${this._showingGlobalDialog ? this._renderGlobalDialog() : ''}
+      ${this._showingDeviceDialog ? this._renderDeviceDialog() : ''}
     `;
 
-    // Attach event listeners to buttons
     this._attachEventListeners();
   }
 
   /**
-   * Render the global configuration card
-   * 
-   * @param {Object} globalConfig - Global configuration object
-   * @returns {string} HTML string for global config card
+   * Render global configuration card
    */
   _renderGlobalConfig(globalConfig) {
     return `
@@ -782,10 +619,7 @@ class PvOptimizerPanel extends HTMLElement {
   }
 
   /**
-   * Render the device list card
-   * 
-   * @param {Array} devices - Array of device objects
-   * @returns {string} HTML string for device list card
+   * Render device list card
    */
   _renderDeviceList(devices) {
     return `
@@ -814,26 +648,18 @@ class PvOptimizerPanel extends HTMLElement {
   }
 
   /**
-   * Render a single device card
-   * 
-   * @param {Object} deviceData - Device data object (contains config and state)
-   * @returns {string} HTML string for device card
+   * Render single device card
    */
   _renderDeviceCard(deviceData) {
     const device = deviceData.config;
     const state = deviceData.state || {};
-    
-    // Status indicator based on optimization enabled/disabled
-    const statusIcon = device.optimization_enabled ? '🟢' : '🔴';
-    
-    // Escape device name for use in onclick attributes
     const escapedName = device.name.replace(/'/g, "\\'");
     
     return `
       <div class="device-card">
         <div class="device-info">
           <div class="device-name">
-            ${statusIcon} ${device.name}
+            ${device.optimization_enabled ? '🟢' : '🔴'} ${device.name}
           </div>
           <div class="device-details">
             <div><strong>Type:</strong> ${device.type}</div>
@@ -855,14 +681,173 @@ class PvOptimizerPanel extends HTMLElement {
   }
 
   /**
+   * Render global configuration dialog
+   */
+  _renderGlobalDialog() {
+    const data = this._dialogData;
+    const sensors = this._getEntities('sensor');
+    
+    return `
+      <div class="dialog-overlay" id="dialog-overlay">
+        <div class="dialog" id="dialog">
+          <div class="dialog-header">Edit Global Configuration</div>
+          <div class="dialog-content">
+            <div class="form-group">
+              <label>PV Surplus Sensor *</label>
+              <select id="surplus_sensor">
+                <option value="">Select sensor...</option>
+                ${sensors.map(entity => `
+                  <option value="${entity}" ${entity === data.surplus_sensor_entity_id ? 'selected' : ''}>
+                    ${entity}
+                  </option>
+                `).join('')}
+              </select>
+              <div class="help-text">Sensor providing PV surplus/deficit (negative = surplus)</div>
+            </div>
+            
+            <div class="form-group">
+              <label>Sliding Window Size (minutes) *</label>
+              <input type="number" id="sliding_window" value="${data.sliding_window_size || 5}" 
+                     min="1" max="60" required>
+              <div class="help-text">Time window for averaging power measurements</div>
+            </div>
+            
+            <div class="form-group">
+              <label>Optimization Cycle Time (seconds) *</label>
+              <input type="number" id="cycle_time" value="${data.optimization_cycle_time || 60}" 
+                     min="10" max="300" required>
+              <div class="help-text">How often the optimizer runs</div>
+            </div>
+          </div>
+          <div class="dialog-actions">
+            <button class="secondary" id="dialog-cancel">Cancel</button>
+            <button id="dialog-save">Save</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Render device dialog (add/edit)
+   */
+  _renderDeviceDialog() {
+    const isEdit = !!this._editingDevice;
+    const data = this._dialogData;
+    const switches = this._getEntities('switch');
+    const sensors = this._getEntities('sensor');
+    const numbers = this._getEntities('number').concat(this._getEntities('input_number'));
+    
+    return `
+      <div class="dialog-overlay" id="dialog-overlay">
+        <div class="dialog" id="dialog">
+          <div class="dialog-header">${isEdit ? `Edit: ${data.name}` : 'Add New Device'}</div>
+          <div class="dialog-content">
+            <div class="form-group">
+              <label>Device Name *</label>
+              <input type="text" id="device_name" value="${data.name}" 
+                     ${isEdit ? 'readonly' : ''} required>
+              <div class="help-text">A unique name for this device</div>
+            </div>
+
+            <div class="form-group">
+              <label>Device Type *</label>
+              <select id="device_type">
+                <option value="switch" ${data.type === 'switch' ? 'selected' : ''}>Switch (On/Off Control)</option>
+                <option value="numeric" ${data.type === 'numeric' ? 'selected' : ''}>Numeric (Value Adjustment)</option>
+              </select>
+              <div class="help-text">Switch: direct on/off | Numeric: adjust values</div>
+            </div>
+
+            <div class="form-group">
+              <label>Priority * (1=highest, 10=lowest)</label>
+              <input type="number" id="priority" value="${data.priority}" min="1" max="10" required>
+            </div>
+
+            <div class="form-group">
+              <label>Nominal Power (W) *</label>
+              <input type="number" id="power" value="${data.power}" min="0" step="0.1" required>
+            </div>
+
+            <div class="checkbox-group">
+              <input type="checkbox" id="optimization_enabled" ${data.optimization_enabled ? 'checked' : ''}>
+              <label>Optimization Enabled</label>
+            </div>
+
+            <div id="switch-fields" style="display: ${data.type === 'switch' ? 'block' : 'none'};">
+              <div class="form-group">
+                <label>Switch Entity *</label>
+                <select id="switch_entity">
+                  <option value="">Select switch...</option>
+                  ${switches.map(entity => `
+                    <option value="${entity}" ${entity === data.switch_entity_id ? 'selected' : ''}>
+                      ${entity}
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
+              
+              <div class="checkbox-group">
+                <input type="checkbox" id="invert_switch" ${data.invert_switch ? 'checked' : ''}>
+                <label>Invert Switch Logic (OFF = activate)</label>
+              </div>
+            </div>
+
+            <div id="numeric-fields" style="display: ${data.type === 'numeric' ? 'block' : 'none'};">
+              <div class="help-text" style="padding: 12px; background-color: var(--warning-color, #ff9800); color: white; border-radius: 4px;">
+                ⚠️ Numeric targets must be configured via YAML. This will be improved in a future version.
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Measured Power Sensor (optional)</label>
+              <select id="measured_power">
+                <option value="">None</option>
+                ${sensors.map(entity => `
+                  <option value="${entity}" ${entity === data.measured_power_entity_id ? 'selected' : ''}>
+                    ${entity}
+                  </option>
+                `).join('')}
+              </select>
+              <div class="help-text">Optional sensor for actual power consumption</div>
+            </div>
+
+            <div class="form-group">
+              <label>Power Threshold (W)</label>
+              <input type="number" id="power_threshold" value="${data.power_threshold || 100}" 
+                     min="0" step="0.1">
+              <div class="help-text">Threshold to determine if device is ON</div>
+            </div>
+
+            <div class="form-group">
+              <label>Minimum On Time (minutes)</label>
+              <input type="number" id="min_on_time" value="${data.min_on_time || 0}" min="0">
+              <div class="help-text">Device must stay on at least this long</div>
+            </div>
+
+            <div class="form-group">
+              <label>Minimum Off Time (minutes)</label>
+              <input type="number" id="min_off_time" value="${data.min_off_time || 0}" min="0">
+              <div class="help-text">Device must stay off at least this long</div>
+            </div>
+          </div>
+          <div class="dialog-actions">
+            <button class="secondary" id="dialog-cancel">Cancel</button>
+            <button id="dialog-save">${isEdit ? 'Update' : 'Add'} Device</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
    * Attach event listeners to interactive elements
-   * This must be called after render() to ensure elements exist
    */
   _attachEventListeners() {
     // Global config edit button
     const editGlobalBtn = this.shadowRoot.querySelector('#edit-global-btn');
     if (editGlobalBtn) {
-      editGlobalBtn.addEventListener('click', () => this._showEditGlobalDialog());
+      editGlobalBtn.addEventListener('click', () => this._showGlobalDialog());
     }
 
     // Add device button
@@ -871,7 +856,7 @@ class PvOptimizerPanel extends HTMLElement {
       addDeviceBtn.addEventListener('click', () => this._showDeviceDialog());
     }
 
-    // Edit device buttons (one per device)
+    // Edit device buttons
     const editButtons = this.shadowRoot.querySelectorAll('.edit-device-btn');
     editButtons.forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -883,7 +868,7 @@ class PvOptimizerPanel extends HTMLElement {
       });
     });
 
-    // Delete device buttons (one per device)
+    // Delete device buttons
     const deleteButtons = this.shadowRoot.querySelectorAll('.delete-device-btn');
     deleteButtons.forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -891,8 +876,101 @@ class PvOptimizerPanel extends HTMLElement {
         this._deleteDevice(deviceName);
       });
     });
+
+    // Dialog event listeners
+    this._attachDialogListeners();
+  }
+
+  /**
+   * Attach dialog-specific event listeners
+   */
+  _attachDialogListeners() {
+    // Dialog overlay click (close on background click)
+    const dialogOverlay = this.shadowRoot.querySelector('#dialog-overlay');
+    if (dialogOverlay) {
+      dialogOverlay.addEventListener('click', (e) => {
+        if (e.target === dialogOverlay) {
+          this._closeDialog();
+        }
+      });
+    }
+
+    // Dialog content click (prevent closing)
+    const dialog = this.shadowRoot.querySelector('#dialog');
+    if (dialog) {
+      dialog.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
+    }
+
+    // Cancel button
+    const cancelBtn = this.shadowRoot.querySelector('#dialog-cancel');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => this._closeDialog());
+    }
+
+    // Save button
+    const saveBtn = this.shadowRoot.querySelector('#dialog-save');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        if (this._showingGlobalDialog) {
+          this._saveGlobalFromDialog();
+        } else if (this._showingDeviceDialog) {
+          this._saveDeviceFromDialog();
+        }
+      });
+    }
+
+    // Type change for device dialog
+    const typeSelect = this.shadowRoot.querySelector('#device_type');
+    if (typeSelect) {
+      typeSelect.addEventListener('change', (e) => {
+        this._dialogData.type = e.target.value;
+        this.render();
+      });
+    }
+
+    // ESC key to close dialog
+    const handleEsc = (e) => {
+      if (e.key === 'Escape' && (this._showingGlobalDialog || this._showingDeviceDialog)) {
+        this._closeDialog();
+      }
+    };
+    document.addEventListener('keydown', handleEsc);
+  }
+
+  /**
+   * Save global config from dialog inputs
+   */
+  _saveGlobalFromDialog() {
+    this._dialogData.surplus_sensor_entity_id = this.shadowRoot.querySelector('#surplus_sensor').value;
+    this._dialogData.sliding_window_size = parseInt(this.shadowRoot.querySelector('#sliding_window').value);
+    this._dialogData.optimization_cycle_time = parseInt(this.shadowRoot.querySelector('#cycle_time').value);
+    this._saveGlobalConfig();
+  }
+
+  /**
+   * Save device from dialog inputs
+   */
+  _saveDeviceFromDialog() {
+    this._dialogData.name = this.shadowRoot.querySelector('#device_name').value;
+    this._dialogData.type = this.shadowRoot.querySelector('#device_type').value;
+    this._dialogData.priority = parseInt(this.shadowRoot.querySelector('#priority').value);
+    this._dialogData.power = parseFloat(this.shadowRoot.querySelector('#power').value);
+    this._dialogData.optimization_enabled = this.shadowRoot.querySelector('#optimization_enabled').checked;
+    this._dialogData.measured_power_entity_id = this.shadowRoot.querySelector('#measured_power').value || null;
+    this._dialogData.power_threshold = parseFloat(this.shadowRoot.querySelector('#power_threshold').value);
+    this._dialogData.min_on_time = parseInt(this.shadowRoot.querySelector('#min_on_time').value);
+    this._dialogData.min_off_time = parseInt(this.shadowRoot.querySelector('#min_off_time').value);
+    
+    if (this._dialogData.type === 'switch') {
+      this._dialogData.switch_entity_id = this.shadowRoot.querySelector('#switch_entity').value;
+      this._dialogData.invert_switch = this.shadowRoot.querySelector('#invert_switch').checked;
+    }
+    
+    this._saveDevice();
   }
 }
 
-// Register the custom element
+// Register custom element
 customElements.define('pv-optimizer-panel', PvOptimizerPanel);
