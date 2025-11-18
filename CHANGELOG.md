@@ -1,5 +1,51 @@
 # Changelog - PV Optimizer Custom Integration
 
+## Version 0.3.1 (2025-11-18)
+
+### 🎯 Critical Fix: Native HA Dialogs
+
+#### Complete Dialog System Rewrite
+- **Native HA Form Dialogs**: Now uses Home Assistant's `ha-form-dialog` system (like browser_mod)
+- **Fixed Cursor Blinking**: No more background focus issues - HA handles dialog focus properly
+- **Fixed Keyboard Shortcuts**: HA shortcuts no longer interfere with form input
+- **Native Selectors**: Full support for HA's selector system:
+  - `entity` selector with domain filtering and autocomplete
+  - `number` selector with min/max/step/units
+  - `boolean` selector for toggles
+  - `select` selector for dropdowns
+  - `text` selector for text inputs
+
+#### Benefits
+- ✅ **No More Focus Issues**: HA's dialog system handles focus management
+- ✅ **Native Look & Feel**: Dialogs look exactly like HA config flows
+- ✅ **Entity Picker Autocomplete**: Full autocomplete with domain filtering
+- ✅ **Keyboard Support**: Shortcuts work correctly, ESC closes dialogs
+- ✅ **Better UX**: Familiar interface for HA users
+
+#### Technical Changes
+- Removed custom modal overlay implementation
+- Uses `show-dialog` event to trigger HA's native dialog system
+- Dialogs use HA's form schema format with selectors
+- No more manual event handling for modals
+- Simplified code from 878 to 857 lines
+
+#### Known Limitation
+- **Numeric Targets**: Complex multi-target configuration for numeric devices still requires YAML
+- Future version will add a dedicated multi-target editor dialog
+
+### 📝 Documentation
+- **Comprehensive Code Comments**: All functions, parameters, and logic explained in English
+- **JSDoc-style comments** for better IDE support
+- **Inline explanations** for complex logic
+
+### 🔧 Code Quality
+- Clear separation of concerns
+- Event-driven architecture
+- Proper error handling
+- Type documentation in comments
+
+---
+
 ## Version 0.3.0 (2025-11-18)
 
 ### ✨ Major Improvements

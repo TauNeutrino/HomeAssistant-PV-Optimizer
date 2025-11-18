@@ -1,38 +1,202 @@
+/**
+ * PV Optimizer Panel for Home Assistant
+ * 
+ * This panel provides a user interface for managing the PV Optimizer integration.
+ * It uses Home Assistant's native dialog system and form selectors for optimal
+ * compatibility and user experience.
+ * 
+ * Features:
+ * - Global configuration management
+ * - Device management (add, edit, delete)
+ * - Native HA dialogs and selectors
+ * - Full dark mode support
+ * - Real-time device status monitoring
+ */
+
 class PvOptimizerPanel extends HTMLElement {
+  /**
+   * Constructor - Initialize component state
+   */
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
-    this._config = null;
-    this._error = null;
-    this._loading = true;
-    this._editingGlobal = false;
-    this._editingDevice = null;
-    this._showAddDevice = false;
-    this._deviceFormData = this._getEmptyDeviceForm();
+    
+    // State management
+    this._config = null;              // Configuration from backend
+    this._error = null;               // Error message if any
+    this._loading = true;             // Loading state
   }
 
+  /**
+   * Setter for hass object (Home Assistant connection)
+   * Called by HA when the hass object is available or updated
+   */
   set hass(hass) {
     this._hass = hass;
+    
+    // Load configuration on first hass assignment
     if (!this._config) {
       this._getConfigWithRetry();
     }
+    
     this.render();
   }
 
+  /**
+   * Getter for hass object
+   */
   get hass() {
     return this._hass;
   }
 
+  /**
+   * Setter for panel configuration
+   * Called by HA with panel-specific configuration
+   */
   set panel(panel) {
     this._panel = panel;
   }
 
+  /**
+   * Lifecycle method - called when element is added to DOM
+   */
   connectedCallback() {
     this.render();
   }
 
-  _getEmptyDeviceForm() {
-    return {
+  /**
+   * Load configuration from backend with retry logic
+   * Retries up to 3 times with exponential backoff
+   * 
+   * @param {number} retryCount - Current retry attempt (0-based)
+   */
+  async _getConfigWithRetry(retryCount = 0) {
+    // Check WebSocket connection availability
+    if (!this._hass?.connection) {
+      this._error = 'WebSocket connection not available';
+      this._loading = false;
+      this.render();
+      return;
+    }
+
+    try {
+      // Set loading state and clear errors
+      this._loading = true;
+      this._error = null;
+      this.render();
+
+      // Small delay to ensure WebSocket is ready
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Fetch configuration via WebSocket
+      const response = await this._hass.callWS({
+        type: 'pv_optimizer/config',
+      });
+      
+      // Update state with received configuration
+      this._config = response;
+      this._loading = false;
+      this._error = null;
+      this.render();
+      
+    } catch (error) {
+      console.error('Failed to get config:', error);
+      
+      // Retry logic with exponential backoff
+      if (retryCount < 3) {
+        const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+        setTimeout(() => this._getConfigWithRetry(retryCount + 1), delay);
+      } else {
+        // Max retries reached - show error
+        this._error = `Failed to load configuration: ${error.message}`;
+        this._loading = false;
+        this.render();
+      }
+    }
+  }
+
+  /**
+   * Show Home Assistant's native dialog for editing global configuration
+   * Uses HA's form dialog with native selectors
+   */
+  _showEditGlobalDialog() {
+    const globalConfig = this._config?.global_config || {};
+    
+    // Define form schema using HA's selector system
+    const schema = [
+      {
+        name: 'surplus_sensor_entity_id',
+        required: true,
+        selector: {
+          entity: {
+            domain: 'sensor',
+            device_class: 'power',
+          }
+        }
+      },
+      {
+        name: 'sliding_window_size',
+        required: true,
+        default: 5,
+        selector: {
+          number: {
+            min: 1,
+            max: 60,
+            unit_of_measurement: 'minutes',
+          }
+        }
+      },
+      {
+        name: 'optimization_cycle_time',
+        required: true,
+        default: 60,
+        selector: {
+          number: {
+            min: 10,
+            max: 300,
+            unit_of_measurement: 'seconds',
+          }
+        }
+      }
+    ];
+
+    // Fire event to show HA's native form dialog
+    this._showFormDialog({
+      title: 'Edit Global Configuration',
+      schema: schema,
+      data: globalConfig,
+      computeLabel: (schema) => {
+        // Generate user-friendly labels
+        const labels = {
+          'surplus_sensor_entity_id': 'PV Surplus Sensor',
+          'sliding_window_size': 'Sliding Window Size',
+          'optimization_cycle_time': 'Optimization Cycle Time',
+        };
+        return labels[schema.name] || schema.name;
+      },
+      computeHelper: (schema) => {
+        // Generate helpful descriptions
+        const helpers = {
+          'surplus_sensor_entity_id': 'The sensor that provides PV surplus/deficit values (negative = surplus)',
+          'sliding_window_size': 'Time window for averaging power measurements to smooth fluctuations',
+          'optimization_cycle_time': 'How often the optimization algorithm runs',
+        };
+        return helpers[schema.name];
+      },
+      submit: async (data) => {
+        await this._saveGlobalConfig(data);
+      }
+    });
+  }
+
+  /**
+   * Show Home Assistant's native dialog for adding/editing a device
+   * 
+   * @param {Object} deviceData - Existing device data (null for new device)
+   */
+  _showDeviceDialog(deviceData = null) {
+    const isEdit = !!deviceData;
+    const device = isEdit ? deviceData.config : {
       name: '',
       type: 'switch',
       priority: 5,
@@ -46,46 +210,227 @@ class PvOptimizerPanel extends HTMLElement {
       min_off_time: 0,
       numeric_targets: [],
     };
-  }
 
-  async _getConfigWithRetry(retryCount = 0) {
-    if (!this._hass?.connection) {
-      this._error = 'WebSocket connection not available';
-      this._loading = false;
-      this.render();
-      return;
-    }
+    // Define form schema - will be dynamically updated based on device type
+    let schema = [
+      {
+        name: 'name',
+        required: true,
+        disabled: isEdit, // Name cannot be changed when editing
+        selector: { text: {} }
+      },
+      {
+        name: 'type',
+        required: true,
+        selector: {
+          select: {
+            options: [
+              { value: 'switch', label: 'Switch (On/Off Control)' },
+              { value: 'numeric', label: 'Numeric (Value Adjustment)' }
+            ]
+          }
+        }
+      },
+      {
+        name: 'priority',
+        required: true,
+        selector: {
+          number: {
+            min: 1,
+            max: 10,
+            mode: 'box',
+          }
+        }
+      },
+      {
+        name: 'power',
+        required: true,
+        selector: {
+          number: {
+            min: 0,
+            step: 0.1,
+            unit_of_measurement: 'W',
+            mode: 'box',
+          }
+        }
+      },
+      {
+        name: 'optimization_enabled',
+        selector: { boolean: {} }
+      },
+    ];
 
-    try {
-      this._loading = true;
-      this._error = null;
-      this.render();
-
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      const response = await this._hass.callWS({
-        type: 'pv_optimizer/config',
+    // Add type-specific fields
+    if (device.type === 'switch') {
+      schema.push(
+        {
+          name: 'switch_entity_id',
+          required: true,
+          selector: {
+            entity: {
+              domain: 'switch',
+            }
+          }
+        },
+        {
+          name: 'invert_switch',
+          selector: { boolean: {} }
+        }
+      );
+    } else if (device.type === 'numeric') {
+      // For numeric devices, we'll handle targets separately
+      // as they require a more complex UI (multiple targets)
+      schema.push({
+        name: 'numeric_targets_info',
+        selector: { 
+          text: { 
+            disabled: true,
+            type: 'text',
+          } 
+        }
       });
-      
-      this._config = response;
-      this._loading = false;
-      this._error = null;
-      this.render();
-      
-    } catch (error) {
-      console.error('Failed to get config:', error);
-      
-      if (retryCount < 3) {
-        const delay = Math.pow(2, retryCount) * 1000;
-        setTimeout(() => this._getConfigWithRetry(retryCount + 1), delay);
-      } else {
-        this._error = `Failed to load configuration: ${error.message}`;
-        this._loading = false;
-        this.render();
-      }
     }
+
+    // Add common optional fields
+    schema.push(
+      {
+        name: 'measured_power_entity_id',
+        selector: {
+          entity: {
+            domain: 'sensor',
+            device_class: 'power',
+          }
+        }
+      },
+      {
+        name: 'power_threshold',
+        selector: {
+          number: {
+            min: 0,
+            step: 0.1,
+            unit_of_measurement: 'W',
+            mode: 'box',
+          }
+        }
+      },
+      {
+        name: 'min_on_time',
+        selector: {
+          number: {
+            min: 0,
+            unit_of_measurement: 'minutes',
+            mode: 'box',
+          }
+        }
+      },
+      {
+        name: 'min_off_time',
+        selector: {
+          number: {
+            min: 0,
+            unit_of_measurement: 'minutes',
+            mode: 'box',
+          }
+        }
+      }
+    );
+
+    // Show the form dialog
+    this._showFormDialog({
+      title: isEdit ? `Edit Device: ${device.name}` : 'Add New Device',
+      schema: schema,
+      data: device,
+      computeLabel: (schema) => {
+        const labels = {
+          'name': 'Device Name',
+          'type': 'Device Type',
+          'priority': 'Priority',
+          'power': 'Nominal Power',
+          'optimization_enabled': 'Optimization Enabled',
+          'switch_entity_id': 'Switch Entity',
+          'invert_switch': 'Invert Switch Logic',
+          'numeric_targets_info': 'Numeric Targets',
+          'measured_power_entity_id': 'Measured Power Sensor',
+          'power_threshold': 'Power Threshold',
+          'min_on_time': 'Minimum On Time',
+          'min_off_time': 'Minimum Off Time',
+        };
+        return labels[schema.name] || schema.name;
+      },
+      computeHelper: (schema) => {
+        const helpers = {
+          'name': 'A unique name for this device',
+          'type': 'Switch: On/Off control | Numeric: Value adjustment',
+          'priority': '1 = highest priority (activated first), 10 = lowest priority',
+          'power': "The device's nominal power consumption in Watts",
+          'optimization_enabled': 'Whether this device should be managed by the optimizer',
+          'switch_entity_id': 'The switch entity to control',
+          'invert_switch': 'Turn OFF to activate device, ON to deactivate (for normally-closed switches)',
+          'numeric_targets_info': 'Note: Numeric targets must be configured via YAML for now. This will be improved in a future version.',
+          'measured_power_entity_id': 'Optional: Sensor providing actual power consumption (overrides nominal power)',
+          'power_threshold': 'Power threshold in Watts to determine if device is ON (when using measured power)',
+          'min_on_time': 'Device must stay on for at least this duration (prevents short-cycling)',
+          'min_off_time': 'Device must stay off for at least this duration (prevents short-cycling)',
+        };
+        return helpers[schema.name];
+      },
+      submit: async (data) => {
+        // Preserve numeric_targets if editing
+        if (isEdit && device.numeric_targets) {
+          data.numeric_targets = device.numeric_targets;
+        }
+        
+        // Remove info field (not actual config)
+        delete data.numeric_targets_info;
+        
+        if (isEdit) {
+          await this._updateDevice(device.name, data);
+        } else {
+          await this._addDevice(data);
+        }
+      }
+    });
   }
 
+  /**
+   * Helper function to show HA's native form dialog
+   * This uses Home Assistant's event system to display forms
+   * 
+   * @param {Object} options - Dialog configuration
+   * @param {string} options.title - Dialog title
+   * @param {Array} options.schema - Form schema (HA selector format)
+   * @param {Object} options.data - Initial form data
+   * @param {Function} options.computeLabel - Function to compute field labels
+   * @param {Function} options.computeHelper - Function to compute helper text
+   * @param {Function} options.submit - Callback when form is submitted
+   */
+  _showFormDialog({ title, schema, data, computeLabel, computeHelper, submit }) {
+    // Fire custom event that HA listens for
+    const event = new CustomEvent('show-dialog', {
+      detail: {
+        dialogTag: 'ha-form-dialog',
+        dialogImport: () => import('https://www.home-assistant.io/static/frontend/2024.11.0/chunk.78cbf8d77f5b0ea11db6.js'),
+        dialogParams: {
+          title: title,
+          schema: schema,
+          data: data,
+          computeLabel: computeLabel,
+          computeHelper: computeHelper,
+          submit: submit,
+        },
+      },
+      bubbles: true,
+      composed: true,
+    });
+    
+    this.dispatchEvent(event);
+  }
+
+  /**
+   * Save global configuration to backend
+   * 
+   * @param {Object} config - Global configuration object
+   */
   async _saveGlobalConfig(config) {
     try {
       await this._hass.callWS({
@@ -93,8 +438,10 @@ class PvOptimizerPanel extends HTMLElement {
         data: config,
       });
       
-      this._editingGlobal = false;
+      // Reload configuration from backend
       await this._getConfigWithRetry();
+      
+      // Show success toast
       this._showToast('Global configuration saved successfully');
     } catch (error) {
       console.error('Failed to save global config:', error);
@@ -102,6 +449,11 @@ class PvOptimizerPanel extends HTMLElement {
     }
   }
 
+  /**
+   * Add a new device via backend API
+   * 
+   * @param {Object} deviceConfig - Device configuration object
+   */
   async _addDevice(deviceConfig) {
     try {
       await this._hass.callWS({
@@ -109,9 +461,10 @@ class PvOptimizerPanel extends HTMLElement {
         device: deviceConfig,
       });
       
-      this._showAddDevice = false;
-      this._deviceFormData = this._getEmptyDeviceForm();
+      // Reload configuration
       await this._getConfigWithRetry();
+      
+      // Show success toast
       this._showToast('Device added successfully');
     } catch (error) {
       console.error('Failed to add device:', error);
@@ -119,6 +472,12 @@ class PvOptimizerPanel extends HTMLElement {
     }
   }
 
+  /**
+   * Update an existing device via backend API
+   * 
+   * @param {string} deviceName - Name of device to update
+   * @param {Object} deviceConfig - New device configuration
+   */
   async _updateDevice(deviceName, deviceConfig) {
     try {
       await this._hass.callWS({
@@ -127,8 +486,10 @@ class PvOptimizerPanel extends HTMLElement {
         device: deviceConfig,
       });
       
-      this._editingDevice = null;
+      // Reload configuration
       await this._getConfigWithRetry();
+      
+      // Show success toast
       this._showToast('Device updated successfully');
     } catch (error) {
       console.error('Failed to update device:', error);
@@ -136,7 +497,14 @@ class PvOptimizerPanel extends HTMLElement {
     }
   }
 
+  /**
+   * Delete a device via backend API
+   * Asks for user confirmation before deleting
+   * 
+   * @param {string} deviceName - Name of device to delete
+   */
   async _deleteDevice(deviceName) {
+    // Confirm deletion
     if (!confirm(`Are you sure you want to delete device "${deviceName}"?`)) {
       return;
     }
@@ -147,7 +515,10 @@ class PvOptimizerPanel extends HTMLElement {
         device_name: deviceName,
       });
       
+      // Reload configuration
       await this._getConfigWithRetry();
+      
+      // Show success toast
       this._showToast('Device deleted successfully');
     } catch (error) {
       console.error('Failed to delete device:', error);
@@ -155,6 +526,11 @@ class PvOptimizerPanel extends HTMLElement {
     }
   }
 
+  /**
+   * Show a toast notification using HA's notification system
+   * 
+   * @param {string} message - Message to display
+   */
   _showToast(message) {
     const event = new CustomEvent('hass-notification', {
       detail: { message },
@@ -164,86 +540,35 @@ class PvOptimizerPanel extends HTMLElement {
     this.dispatchEvent(event);
   }
 
-  _updateFormData(field, value) {
-    this._deviceFormData = {
-      ...this._deviceFormData,
-      [field]: value,
-    };
-    this.render();
-  }
-
-  _addNumericTarget() {
-    const targets = [...(this._deviceFormData.numeric_targets || [])];
-    targets.push({
-      numeric_entity_id: '',
-      activated_value: '',
-      deactivated_value: ''
-    });
-    this._updateFormData('numeric_targets', targets);
-  }
-
-  _removeNumericTarget(index) {
-    const targets = [...(this._deviceFormData.numeric_targets || [])];
-    targets.splice(index, 1);
-    this._updateFormData('numeric_targets', targets);
-  }
-
-  _updateNumericTarget(index, field, value) {
-    const targets = [...(this._deviceFormData.numeric_targets || [])];
-    targets[index] = {
-      ...targets[index],
-      [field]: value
-    };
-    this._updateFormData('numeric_targets', targets);
-  }
-
-  _handleDeviceSubmit() {
-    const formData = this._deviceFormData;
-    
-    const deviceConfig = {
-      name: formData.name,
-      type: formData.type,
-      priority: parseInt(formData.priority),
-      power: parseFloat(formData.power),
-      optimization_enabled: formData.optimization_enabled,
-      measured_power_entity_id: formData.measured_power_entity_id || null,
-      power_threshold: parseFloat(formData.power_threshold) || 100,
-      min_on_time: parseInt(formData.min_on_time) || 0,
-      min_off_time: parseInt(formData.min_off_time) || 0,
-    };
-    
-    if (deviceConfig.type === 'switch') {
-      deviceConfig.switch_entity_id = formData.switch_entity_id;
-      deviceConfig.invert_switch = formData.invert_switch;
-    } else if (deviceConfig.type === 'numeric') {
-      deviceConfig.numeric_targets = formData.numeric_targets || [];
-    }
-    
-    if (this._editingDevice) {
-      this._updateDevice(this._editingDevice.config.name, deviceConfig);
-    } else {
-      this._addDevice(deviceConfig);
-    }
-  }
-
+  /**
+   * Main render function - updates the Shadow DOM with current state
+   * Called whenever state changes
+   */
   render() {
     if (!this.shadowRoot) return;
 
+    // Define CSS styles (using HA CSS variables for theme support)
     const styles = `
       <style>
+        /* Base host styles */
         :host {
           display: block;
           padding: 16px;
           background-color: var(--primary-background-color);
         }
 
+        /* Header styling */
         .header {
           font-size: 24px;
           font-weight: 500;
           margin-bottom: 24px;
           color: var(--primary-text-color);
+          display: flex;
+          align-items: center;
+          gap: 12px;
         }
 
+        /* Card container (uses HA card styling) */
         .card {
           background-color: var(--ha-card-background, var(--card-background-color, white));
           border-radius: var(--ha-card-border-radius, 12px);
@@ -252,6 +577,7 @@ class PvOptimizerPanel extends HTMLElement {
           margin-bottom: 20px;
         }
 
+        /* Card header with action buttons */
         .card-header {
           display: flex;
           justify-content: space-between;
@@ -262,10 +588,12 @@ class PvOptimizerPanel extends HTMLElement {
           color: var(--primary-text-color);
         }
 
+        /* Card content area */
         .card-content {
           color: var(--primary-text-color);
         }
 
+        /* Configuration group (label + value pair) */
         .config-group {
           margin-bottom: 16px;
         }
@@ -284,6 +612,7 @@ class PvOptimizerPanel extends HTMLElement {
           font-size: 13px;
         }
 
+        /* Button styling (HA theme colors) */
         button {
           background-color: var(--primary-color);
           color: white;
@@ -300,19 +629,21 @@ class PvOptimizerPanel extends HTMLElement {
           background-color: var(--primary-color-dark, #0288d1);
         }
 
-        button.secondary {
-          background-color: var(--secondary-text-color);
-        }
-
         button.danger {
           background-color: var(--error-color, #f44336);
         }
 
+        button.danger:hover {
+          background-color: #d32f2f;
+        }
+
+        /* Device list grid */
         .device-list {
           display: grid;
           gap: 12px;
         }
 
+        /* Individual device card */
         .device-card {
           background-color: var(--card-background-color);
           border: 1px solid var(--divider-color);
@@ -334,6 +665,7 @@ class PvOptimizerPanel extends HTMLElement {
           margin-bottom: 8px;
         }
 
+        /* Device details grid */
         .device-details {
           display: grid;
           grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -342,141 +674,30 @@ class PvOptimizerPanel extends HTMLElement {
           color: var(--secondary-text-color);
         }
 
+        /* Device action buttons */
         .device-actions {
           display: flex;
           gap: 8px;
         }
 
+        /* Empty state when no devices configured */
         .empty-state {
           text-align: center;
           padding: 40px 20px;
           color: var(--secondary-text-color);
         }
 
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background-color: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 999;
-        }
-
-        .modal {
-          background-color: var(--ha-card-background, var(--card-background-color, white));
-          border-radius: 8px;
-          padding: 24px;
-          max-width: 600px;
-          width: 100%;
-          max-height: 90vh;
-          overflow-y: auto;
-        }
-
-        .modal-header {
-          font-size: 20px;
-          font-weight: 600;
-          margin-bottom: 20px;
-          color: var(--primary-text-color);
-        }
-
-        .modal-actions {
-          display: flex;
-          justify-content: flex-end;
-          gap: 12px;
-          margin-top: 20px;
-          padding-top: 20px;
-          border-top: 1px solid var(--divider-color);
-        }
-
-        .form-group {
-          margin-bottom: 16px;
-        }
-
-        label {
-          display: block;
-          margin-bottom: 6px;
-          color: var(--primary-text-color);
-          font-weight: 500;
-          font-size: 14px;
-        }
-
-        input[type="text"],
-        input[type="number"],
-        select {
-          width: 100%;
-          padding: 10px;
-          border: 1px solid var(--divider-color);
-          border-radius: 4px;
-          background-color: var(--primary-background-color);
-          color: var(--primary-text-color);
-          font-size: 14px;
-          box-sizing: border-box;
-        }
-
-        input[type="text"]:focus,
-        input[type="number"]:focus,
-        select:focus {
-          outline: none;
-          border-color: var(--primary-color);
-        }
-
-        input[type="checkbox"] {
-          width: 18px;
-          height: 18px;
-          margin-right: 8px;
-        }
-
-        .checkbox-group {
-          display: flex;
-          align-items: center;
-          margin-bottom: 16px;
-        }
-
-        .checkbox-group label {
-          margin-bottom: 0;
-        }
-
-        .help-text {
-          font-size: 12px;
-          color: var(--secondary-text-color);
-          margin-top: 4px;
-        }
-
-        .numeric-targets {
-          border: 1px solid var(--divider-color);
-          border-radius: 4px;
-          padding: 12px;
-          margin-bottom: 12px;
-        }
-
-        .numeric-target {
-          padding: 12px;
-          border: 1px solid var(--divider-color);
-          border-radius: 4px;
-          margin-bottom: 12px;
-          background-color: var(--secondary-background-color);
-        }
-
-        .target-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 12px;
-          font-weight: 500;
-        }
-
+        /* Error message styling */
         .error {
           color: var(--error-color);
           background-color: rgba(244, 67, 54, 0.1);
           padding: 12px;
           border-radius: 4px;
           margin: 8px 0;
+          border-left: 4px solid var(--error-color);
         }
 
+        /* Loading state styling */
         .loading {
           text-align: center;
           padding: 20px;
@@ -485,24 +706,26 @@ class PvOptimizerPanel extends HTMLElement {
       </style>
     `;
 
+    // Render error state
     if (this._error) {
       this.shadowRoot.innerHTML = `
         ${styles}
-        <div class="header">PV Optimizer</div>
+        <div class="header">⚡ PV Optimizer</div>
         <div class="card">
           <div class="error">
             <strong>Error:</strong> ${this._error}
-            <div><button onclick="location.reload()" style="margin-top: 12px;">Refresh</button></div>
+            <div><button onclick="location.reload()" style="margin-top: 12px;">Refresh Page</button></div>
           </div>
         </div>
       `;
       return;
     }
 
+    // Render loading state
     if (this._loading) {
       this.shadowRoot.innerHTML = `
         ${styles}
-        <div class="header">PV Optimizer</div>
+        <div class="header">⚡ PV Optimizer</div>
         <div class="card">
           <div class="loading">Loading configuration...</div>
         </div>
@@ -510,28 +733,35 @@ class PvOptimizerPanel extends HTMLElement {
       return;
     }
 
+    // Extract configuration data
     const globalConfig = this._config?.global_config || {};
     const devices = this._config?.devices || [];
 
+    // Render main content
     this.shadowRoot.innerHTML = `
       ${styles}
       <div class="header">⚡ PV Optimizer</div>
       
       ${this._renderGlobalConfig(globalConfig)}
       ${this._renderDeviceList(devices)}
-      ${this._editingGlobal ? this._renderGlobalConfigModal(globalConfig) : ''}
-      ${this._showAddDevice || this._editingDevice ? this._renderDeviceModal() : ''}
     `;
 
+    // Attach event listeners to buttons
     this._attachEventListeners();
   }
 
+  /**
+   * Render the global configuration card
+   * 
+   * @param {Object} globalConfig - Global configuration object
+   * @returns {string} HTML string for global config card
+   */
   _renderGlobalConfig(globalConfig) {
     return `
       <div class="card">
         <div class="card-header">
           <span>Global Configuration</span>
-          <button onclick="this.getRootNode().host._editGlobalConfig()">✏️ Edit</button>
+          <button id="edit-global-btn">✏️ Edit</button>
         </div>
         <div class="card-content">
           <div class="config-group">
@@ -551,12 +781,18 @@ class PvOptimizerPanel extends HTMLElement {
     `;
   }
 
+  /**
+   * Render the device list card
+   * 
+   * @param {Array} devices - Array of device objects
+   * @returns {string} HTML string for device list card
+   */
   _renderDeviceList(devices) {
     return `
       <div class="card">
         <div class="card-header">
           <span>Devices (${devices.length})</span>
-          <button onclick="this.getRootNode().host._showAddDeviceModal()">➕ Add Device</button>
+          <button id="add-device-btn">➕ Add Device</button>
         </div>
         <div class="card-content">
           ${devices.length === 0 ? `
@@ -577,15 +813,27 @@ class PvOptimizerPanel extends HTMLElement {
     `;
   }
 
+  /**
+   * Render a single device card
+   * 
+   * @param {Object} deviceData - Device data object (contains config and state)
+   * @returns {string} HTML string for device card
+   */
   _renderDeviceCard(deviceData) {
     const device = deviceData.config;
     const state = deviceData.state || {};
+    
+    // Status indicator based on optimization enabled/disabled
+    const statusIcon = device.optimization_enabled ? '🟢' : '🔴';
+    
+    // Escape device name for use in onclick attributes
+    const escapedName = device.name.replace(/'/g, "\\'");
     
     return `
       <div class="device-card">
         <div class="device-info">
           <div class="device-name">
-            ${device.optimization_enabled ? '🟢' : '🔴'} ${device.name}
+            ${statusIcon} ${device.name}
           </div>
           <div class="device-details">
             <div><strong>Type:</strong> ${device.type}</div>
@@ -599,253 +847,52 @@ class PvOptimizerPanel extends HTMLElement {
           </div>
         </div>
         <div class="device-actions">
-          <button onclick="this.getRootNode().host._editDevice('${device.name}')">✏️</button>
-          <button class="danger" onclick="this.getRootNode().host._deleteDevice('${device.name}')">🗑️</button>
+          <button class="edit-device-btn" data-device-name="${escapedName}">✏️ Edit</button>
+          <button class="danger delete-device-btn" data-device-name="${escapedName}">🗑️ Delete</button>
         </div>
       </div>
     `;
   }
 
-  _renderGlobalConfigModal(globalConfig) {
-    return `
-      <div class="modal-overlay" onclick="if(event.target === this) this.getRootNode().host._cancelEdit()">
-        <div class="modal" onclick="event.stopPropagation()">
-          <div class="modal-header">Edit Global Configuration</div>
-          <form id="global-config-form">
-            <div class="form-group">
-              <label>PV Surplus Sensor *</label>
-              <input type="text" id="surplus_sensor" value="${globalConfig.surplus_sensor_entity_id || ''}" required>
-              <div class="help-text">The sensor that provides the PV surplus/deficit value</div>
-            </div>
-            
-            <div class="form-group">
-              <label>Sliding Window Size (minutes) *</label>
-              <input type="number" id="sliding_window" value="${globalConfig.sliding_window_size || 5}" 
-                     min="1" max="60" required>
-              <div class="help-text">Time window for averaging power measurements</div>
-            </div>
-            
-            <div class="form-group">
-              <label>Optimization Cycle Time (seconds) *</label>
-              <input type="number" id="cycle_time" value="${globalConfig.optimization_cycle_time || 60}" 
-                     min="10" max="300" required>
-              <div class="help-text">How often the optimizer runs</div>
-            </div>
-            
-            <div class="modal-actions">
-              <button type="button" class="secondary" onclick="this.getRootNode().host._cancelEdit()">
-                Cancel
-              </button>
-              <button type="submit">Save</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    `;
-  }
-
-  _renderDeviceModal() {
-    const isEdit = !!this._editingDevice;
-    const formData = this._deviceFormData;
-
-    return `
-      <div class="modal-overlay" onclick="if(event.target === this) this.getRootNode().host._cancelEdit()">
-        <div class="modal" onclick="event.stopPropagation()">
-          <div class="modal-header">${isEdit ? `Edit: ${formData.name}` : 'Add New Device'}</div>
-          <form id="device-form">
-            <div class="form-group">
-              <label>Device Name *</label>
-              <input type="text" id="device_name" value="${formData.name}" 
-                     ${isEdit ? 'readonly' : ''} required>
-              <div class="help-text">A unique name for this device</div>
-            </div>
-
-            <div class="form-group">
-              <label>Device Type *</label>
-              <select id="device_type" onchange="this.getRootNode().host._handleTypeChange(this.value)">
-                <option value="switch" ${formData.type === 'switch' ? 'selected' : ''}>Switch</option>
-                <option value="numeric" ${formData.type === 'numeric' ? 'selected' : ''}>Numeric</option>
-              </select>
-              <div class="help-text">Switch: On/Off control | Numeric: Value adjustment</div>
-            </div>
-
-            <div class="form-group">
-              <label>Priority * (1=highest, 10=lowest)</label>
-              <input type="number" id="priority" value="${formData.priority}" min="1" max="10" required>
-            </div>
-
-            <div class="form-group">
-              <label>Nominal Power (W) *</label>
-              <input type="number" id="power" value="${formData.power}" min="0" step="0.1" required>
-            </div>
-
-            <div class="checkbox-group">
-              <input type="checkbox" id="optimization_enabled" 
-                     ${formData.optimization_enabled ? 'checked' : ''}>
-              <label>Optimization Enabled</label>
-            </div>
-
-            <div id="switch-fields" style="display: ${formData.type === 'switch' ? 'block' : 'none'};">
-              <div class="form-group">
-                <label>Switch Entity *</label>
-                <input type="text" id="switch_entity" value="${formData.switch_entity_id || ''}">
-                <div class="help-text">e.g., switch.my_device</div>
-              </div>
-              
-              <div class="checkbox-group">
-                <input type="checkbox" id="invert_switch" ${formData.invert_switch ? 'checked' : ''}>
-                <label>Invert Switch Logic</label>
-              </div>
-            </div>
-
-            <div id="numeric-fields" style="display: ${formData.type === 'numeric' ? 'block' : 'none'};">
-              <div class="form-group">
-                <label>Numeric Targets</label>
-                <div class="numeric-targets" id="numeric-targets">
-                  ${this._renderNumericTargets(formData.numeric_targets || [])}
-                </div>
-                <button type="button" onclick="this.getRootNode().host._addNumericTarget()">
-                  ➕ Add Target
-                </button>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label>Measured Power Sensor (optional)</label>
-              <input type="text" id="measured_power" value="${formData.measured_power_entity_id || ''}">
-              <div class="help-text">Sensor providing actual power consumption</div>
-            </div>
-
-            <div class="form-group">
-              <label>Power Threshold (W)</label>
-              <input type="number" id="power_threshold" value="${formData.power_threshold || 100}" 
-                     min="0" step="0.1">
-            </div>
-
-            <div class="form-group">
-              <label>Minimum On Time (minutes)</label>
-              <input type="number" id="min_on_time" value="${formData.min_on_time || 0}" min="0">
-            </div>
-
-            <div class="form-group">
-              <label>Minimum Off Time (minutes)</label>
-              <input type="number" id="min_off_time" value="${formData.min_off_time || 0}" min="0">
-            </div>
-
-            <div class="modal-actions">
-              <button type="button" class="secondary" onclick="this.getRootNode().host._cancelEdit()">
-                Cancel
-              </button>
-              <button type="submit">${isEdit ? 'Update' : 'Add'} Device</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    `;
-  }
-
-  _renderNumericTargets(targets) {
-    if (targets.length === 0) {
-      return '<div class="help-text">No targets configured. Click "Add Target" to add one.</div>';
-    }
-    
-    return targets.map((target, index) => `
-      <div class="numeric-target">
-        <div class="target-header">
-          <span>Target ${index + 1}</span>
-          <button type="button" class="danger" onclick="this.getRootNode().host._removeNumericTarget(${index})">
-            🗑️ Remove
-          </button>
-        </div>
-        <div class="form-group">
-          <label>Entity ID *</label>
-          <input type="text" value="${target.numeric_entity_id || ''}" 
-                 onchange="this.getRootNode().host._updateNumericTarget(${index}, 'numeric_entity_id', this.value)" required>
-        </div>
-        <div class="form-group">
-          <label>Activated Value *</label>
-          <input type="number" value="${target.activated_value || ''}" step="any"
-                 onchange="this.getRootNode().host._updateNumericTarget(${index}, 'activated_value', parseFloat(this.value))" required>
-        </div>
-        <div class="form-group">
-          <label>Deactivated Value *</label>
-          <input type="number" value="${target.deactivated_value || ''}" step="any"
-                 onchange="this.getRootNode().host._updateNumericTarget(${index}, 'deactivated_value', parseFloat(this.value))" required>
-        </div>
-      </div>
-    `).join('');
-  }
-
+  /**
+   * Attach event listeners to interactive elements
+   * This must be called after render() to ensure elements exist
+   */
   _attachEventListeners() {
-    const globalForm = this.shadowRoot.querySelector('#global-config-form');
-    if (globalForm) {
-      globalForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const config = {
-          surplus_sensor_entity_id: this.shadowRoot.querySelector('#surplus_sensor').value,
-          sliding_window_size: parseInt(this.shadowRoot.querySelector('#sliding_window').value),
-          optimization_cycle_time: parseInt(this.shadowRoot.querySelector('#cycle_time').value),
-        };
-        this._saveGlobalConfig(config);
-      });
+    // Global config edit button
+    const editGlobalBtn = this.shadowRoot.querySelector('#edit-global-btn');
+    if (editGlobalBtn) {
+      editGlobalBtn.addEventListener('click', () => this._showEditGlobalDialog());
     }
 
-    const deviceForm = this.shadowRoot.querySelector('#device-form');
-    if (deviceForm) {
-      deviceForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        
-        this._deviceFormData.name = this.shadowRoot.querySelector('#device_name').value;
-        this._deviceFormData.type = this.shadowRoot.querySelector('#device_type').value;
-        this._deviceFormData.priority = parseInt(this.shadowRoot.querySelector('#priority').value);
-        this._deviceFormData.power = parseFloat(this.shadowRoot.querySelector('#power').value);
-        this._deviceFormData.optimization_enabled = this.shadowRoot.querySelector('#optimization_enabled').checked;
-        this._deviceFormData.measured_power_entity_id = this.shadowRoot.querySelector('#measured_power').value;
-        this._deviceFormData.power_threshold = parseFloat(this.shadowRoot.querySelector('#power_threshold').value);
-        this._deviceFormData.min_on_time = parseInt(this.shadowRoot.querySelector('#min_on_time').value);
-        this._deviceFormData.min_off_time = parseInt(this.shadowRoot.querySelector('#min_off_time').value);
-        
-        if (this._deviceFormData.type === 'switch') {
-          this._deviceFormData.switch_entity_id = this.shadowRoot.querySelector('#switch_entity').value;
-          this._deviceFormData.invert_switch = this.shadowRoot.querySelector('#invert_switch').checked;
+    // Add device button
+    const addDeviceBtn = this.shadowRoot.querySelector('#add-device-btn');
+    if (addDeviceBtn) {
+      addDeviceBtn.addEventListener('click', () => this._showDeviceDialog());
+    }
+
+    // Edit device buttons (one per device)
+    const editButtons = this.shadowRoot.querySelectorAll('.edit-device-btn');
+    editButtons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const deviceName = e.target.dataset.deviceName;
+        const deviceData = this._config.devices.find(d => d.config.name === deviceName);
+        if (deviceData) {
+          this._showDeviceDialog(deviceData);
         }
-        
-        this._handleDeviceSubmit();
       });
-    }
-  }
+    });
 
-  _editGlobalConfig() {
-    this._editingGlobal = true;
-    this.render();
-  }
-
-  _showAddDeviceModal() {
-    this._showAddDevice = true;
-    this._deviceFormData = this._getEmptyDeviceForm();
-    this.render();
-  }
-
-  _editDevice(deviceName) {
-    const deviceData = this._config.devices.find(d => d.config.name === deviceName);
-    if (deviceData) {
-      this._deviceFormData = { ...deviceData.config };
-      this._editingDevice = deviceData;
-      this.render();
-    }
-  }
-
-  _cancelEdit() {
-    this._editingGlobal = false;
-    this._editingDevice = null;
-    this._showAddDevice = false;
-    this.render();
-  }
-
-  _handleTypeChange(newType) {
-    this._deviceFormData.type = newType;
-    this.render();
+    // Delete device buttons (one per device)
+    const deleteButtons = this.shadowRoot.querySelectorAll('.delete-device-btn');
+    deleteButtons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const deviceName = e.target.dataset.deviceName;
+        this._deleteDevice(deviceName);
+      });
+    });
   }
 }
 
+// Register the custom element
 customElements.define('pv-optimizer-panel', PvOptimizerPanel);
