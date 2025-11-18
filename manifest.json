@@ -2,6 +2,10 @@
   "domain": "pv_optimizer",
   "name": "PV Optimizer",
   "config_flow": true,
-  "version": "0.1.0",
-  "dependencies": ["panel_custom", "websocket_api", "http", "frontend", "lovelace"]
+  "version": "0.2.0",
+  "documentation": "https://github.com/yourusername/ha-pv-optimizer",
+  "issue_tracker": "https://github.com/yourusername/ha-pv-optimizer/issues",
+  "dependencies": ["panel_custom", "websocket_api", "http", "frontend", "lovelace"],
+  "codeowners": ["@yourusername"],
+  "iot_class": "local_polling"
 }

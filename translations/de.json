@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "PV Optimizer Einrichtung",
+        "description": "Konfigurieren Sie die globalen Einstellungen für PV Optimizer.",
+        "data": {
+          "surplus_sensor_entity_id": "PV-Überschuss-Sensor",
+          "sliding_window_size": "Gleitende Fenstergröße (Minuten)",
+          "optimization_cycle_time": "Optimierungszykluszeit (Sekunden)"
+        }
+      }
+    },
+    "error": {
+      "invalid_entity": "Ungültige Entität ausgewählt."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "PV Optimizer Optionen",
+        "description": "Globale Einstellungen aktualisieren.",
+        "data": {
+          "surplus_sensor_entity_id": "PV-Überschuss-Sensor",
+          "sliding_window_size": "Gleitende Fenstergröße (Minuten)",
+          "optimization_cycle_time": "Optimierungszykluszeit (Sekunden)"
+        }
+      }
+    }
+  }
+}
