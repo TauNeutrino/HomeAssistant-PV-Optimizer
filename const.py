@@ -1,12 +1,15 @@
-"""Constants for PV Optimizer integration."""
+
 DOMAIN = "pv_optimizer"
 
-# Global config keys
+FRONTEND_URL = "/pv_optimizer-panel.js"
+PANEL_TITLE = "PV Optimizer"
+PANEL_ICON = "mdi:solar-power"
+PANEL_URL = "pv-optimizer"
+
+# Configuration constants
 CONF_SURPLUS_SENSOR_ENTITY_ID = "surplus_sensor_entity_id"
 CONF_SLIDING_WINDOW_SIZE = "sliding_window_size"
 CONF_OPTIMIZATION_CYCLE_TIME = "optimization_cycle_time"
-
-# Device config keys
 CONF_NAME = "name"
 CONF_PRIORITY = "priority"
 CONF_POWER = "power"
@@ -27,7 +30,7 @@ CONF_INVERT_SWITCH = "invert_switch"
 TYPE_SWITCH = "switch"
 TYPE_NUMERIC = "numeric"
 
-# Internal attributes
+# Attributes
 ATTR_PVO_LAST_TARGET_STATE = "pvo_last_target_state"
 ATTR_IS_LOCKED = "is_locked"
 ATTR_MEASURED_POWER_AVG = "measured_power_avg"

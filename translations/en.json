@@ -9,36 +9,6 @@
           "sliding_window_size": "Sliding Window Size (minutes)",
           "optimization_cycle_time": "Optimization Cycle Time (seconds)"
         }
-      },
-      "device": {
-        "title": "Add Device",
-        "description": "Configure a device for optimization.",
-        "data": {
-          "name": "Device Name",
-          "priority": "Priority (1-10, 1 highest)",
-          "power": "Power Consumption (W)",
-          "type": "Device Type",
-          "min_on_time": "Minimum On Time (minutes)",
-          "min_off_time": "Minimum Off Time (minutes)",
-          "optimization_enabled": "Enable Optimization",
-          "measured_power_entity_id": "Measured Power Sensor",
-          "power_threshold": "Power Threshold (W)",
-          "invert_switch": "Invert Switch Logic"
-        }
-      },
-      "add_devices": {
-        "title": "Add Devices",
-        "description": "Do you want to add devices now?",
-        "data": {
-          "add_devices": "Add devices"
-        }
-      },
-      "add_another": {
-        "title": "Add Another Device",
-        "description": "Do you want to add another device?",
-        "data": {
-          "add_another": "Add another device"
-        }
       }
     },
     "error": {
