@@ -89,11 +89,18 @@ class PvOptimizerPanel extends LitElement {
 
   _renderStatusCard() {
     const ready = !this._loading && !this._error && this._config;
-    
+
     return html`
       <ha-card outlined>
         <h1 class="card-header">
           <div class="name">PV Optimizer</div>
+          <ha-button
+            appearance="filled"
+            @click=${this._openConfiguration}
+          >
+            <ha-icon slot="icon" .icon=${"mdi:cog"}></ha-icon>
+            Open Configuration
+          </ha-button>
           ${ready
             ? html`
                 <ha-icon
@@ -127,20 +134,9 @@ class PvOptimizerPanel extends LitElement {
             : html`
                 <ha-alert alert-type="info">
                   Configure devices and settings through the integration's
-                  options flow. Click the button below to manage your PV
-                  Optimizer devices.
+                  options flow.
                 </ha-alert>
               `}
-
-          <div class="config-button-container">
-            <ha-button
-              appearance="filled"
-              @click=${this._openConfiguration}
-            >
-              <ha-icon slot="icon" .icon=${"mdi:cog"}></ha-icon>
-              Open Configuration
-            </ha-button>
-          </div>
         </div>
       </ha-card>
     `;
@@ -249,9 +245,10 @@ class PvOptimizerPanel extends LitElement {
     }
 
     return html`
-      ${this._renderStatusCard()} 
-      ${this._renderGlobalConfigCard()}
-      ${this._renderDevicesCard()}
+      <div class="card-container">
+        ${this._renderStatusCard()} ${this._renderGlobalConfigCard()}
+        ${this._renderDevicesCard()}
+      </div>
     `;
   }
 
@@ -259,14 +256,23 @@ class PvOptimizerPanel extends LitElement {
     return css`
       :host {
         display: block;
-        padding: 0;
+        padding: 16px;
         background-color: var(--primary-background-color);
         --app-header-background-color: var(--sidebar-background-color);
         --ha-card-border-radius: 8px;
       }
 
+      .card-container {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 16px;
+      }
+
       ha-card {
-        margin: 16px;
+        flex: 0 1 auto;
+        min-width: 350px;
+        max-width: 500px;
       }
 
       .card-header {
@@ -276,6 +282,7 @@ class PvOptimizerPanel extends LitElement {
         padding: 16px;
         font-size: 18px;
         font-weight: 600;
+        gap: 16px;
       }
 
       .card-header .name {
@@ -291,8 +298,7 @@ class PvOptimizerPanel extends LitElement {
       }
 
       .config-button-container {
-        text-align: center;
-        padding: 16px 0;
+        display: none;
       }
 
       .config-group {
@@ -369,9 +375,15 @@ class PvOptimizerPanel extends LitElement {
         display: flex;
       }
 
-      @media all and (max-width: 450px), all and (max-height: 500px) {
+      @media all and (max-width: 820px) {
+        :host {
+          padding: 8px;
+        }
+        .card-container {
+          gap: 8px;
+        }
         ha-card {
-          margin: 8px;
+          margin: 0;
         }
 
         .device-details {
