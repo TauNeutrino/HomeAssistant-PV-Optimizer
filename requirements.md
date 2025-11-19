@@ -19,23 +19,40 @@ For easy accessability, the PV Optimizer interface shall be linked directly on t
 
 ## 3. System & Device Configuration
 
-The system is configured entirely through a dedicated **PV Optimizer** panel in the Home Assistant sidebar. This UI-driven approach allows for dynamic and real-time configuration without needing to restart Home Assistant or re-run a configuration flow.
+The system provides two complementary interfaces for configuration:
 
-When the integration is first added, it will automatically be ready to use. The configuration panel is the single place for all settings.
+### 3.1. Initial Setup (Config Flow)
 
-### 3.1. General Configuration
+When first adding the integration:
+1. Navigate to **Settings → Devices & Services → Add Integration**
+2. Search for "PV Optimizer"
+3. Configure the global parameters:
+   - **`surplus_sensor_entity_id`**: The primary sensor entity that provides the PV surplus value
+   - **`sliding_window_size`**: The size of the sliding window in minutes for averaging the surplus power
+   - **`optimization_cycle_time`**: The frequency in seconds at which the optimization algorithm runs
 
-The main view of the PV Optimizer panel allows you to set the global parameters for the optimizer:
+### 3.2. Device Management (Options Flow)
 
--   **`surplus_sensor_entity_id`**: The primary sensor entity that provides the PV surplus value. The system uses a time-averaged (sliding window) value of this sensor to smooth out brief fluctuations.
--   **`sliding_window_size`**: The size of the sliding window in minutes for averaging the surplus power.
--   **`optimization_cycle_time`**: The frequency in seconds at which the optimization algorithm runs.
+Device configuration (add, edit, delete) is handled through the integration's **Options Flow**:
 
-**Important Note on Configuration:** Device configuration (adding, editing, or removing controllable devices) is handled exclusively through the PV Optimizer frontend panel in the Home Assistant sidebar. The initial integration setup via config flow only requires the global parameters above. No device configuration is prompted during the config flow; devices are managed entirely via the UI panel after setup. The integration is immediately usable after global config setup with an empty device list.
+**Access via Integration Page:**
+- Settings → Devices & Services → PV Optimizer → **Configure**
+- Menu-based navigation with native Home Assistant forms
 
-### 3.2. Device Management
+**Access via Sidebar Panel:**
+- Click "PV Optimizer" in sidebar
+- Click **"Open Configuration"** button
+- Automatically navigates to options flow
 
-The panel provides a user-friendly interface to add, edit, and remove controllable devices. Each device has the following configuration parameters:
+The options flow provides:
+- Global configuration editing
+- Device list (view/edit/delete existing devices)
+- Add Switch Device (separate form optimized for switches)
+- Add Numeric Device (separate form optimized for numeric controls)
+
+### 3.3. Device Configuration Parameters
+
+Each device requires the following configuration parameters:
 
 -   **`name`**: A human-readable name for the device (e.g., "Hot water optimization").
 -   **`priority`**: A numerical value indicating its activation priority (e.g., 1-10, where 1 is the highest).

@@ -1,4 +1,66 @@
-"""Device classes for PV Optimizer integration."""
+"""
+Device Classes for PV Optimizer Integration
+
+This module implements the device abstraction layer, providing a unified
+interface for controlling different types of devices (switch-based and
+numeric-based).
+
+Purpose:
+--------
+Abstract the differences between device types behind a common interface,
+allowing the coordinator to control any device type uniformly without
+knowing the implementation details.
+
+Architecture:
+------------
+Uses the Strategy Pattern with an abstract base class and concrete
+implementations for each device type.
+
+Class Hierarchy:
+---------------
+PVDevice (Abstract Base Class)
+├── SwitchDevice: Controls ON/OFF devices via switch entities
+└── NumericDevice: Controls devices by setting numeric values
+
+Design Benefits:
+---------------
+1. Polymorphism: Coordinator treats all devices uniformly
+2. Extensibility: Easy to add new device types
+3. Encapsulation: Device-specific logic hidden from coordinator
+4. Testability: Each device type can be tested independently
+
+Device Types Explained:
+----------------------
+1. Switch Device:
+   - Controls a switch entity (on/off)
+   - Example: Hot water heater, washing machine
+   - Activation: Turn switch ON
+   - Deactivation: Turn switch OFF
+   - Optional invert logic for reversed switches
+
+2. Numeric Device:
+   - Controls one or more numeric entities (set values)
+   - Example: Heat pump temperature setpoints
+   - Activation: Set numeric entities to "activated" values
+   - Deactivation: Set numeric entities to "deactivated" values
+   - Supports up to 5 numeric targets per device
+
+Common Functionality:
+--------------------
+All devices support:
+- Power threshold-based state detection
+- Integration with measured power sensors
+- Abstracted activation/deactivation
+- Uniform state checking (is_on)
+- Power consumption reporting
+
+Factory Pattern:
+---------------
+The create_device() factory function instantiates the appropriate
+device subclass based on configuration, simplifying device creation
+in the coordinator.
+"""
+
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
@@ -24,10 +86,42 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class PVDevice(ABC):
-    """Base class for PV Optimizer devices."""
+    """
+    Abstract base class for PV Optimizer devices.
+    
+    Defines the interface that all device types must implement,
+    ensuring uniform control from the coordinator regardless of
+    the underlying device type.
+    
+    This abstraction solves the problem of controlling heterogeneous
+    devices (switches, numeric controls, etc.) through a single,
+    consistent interface.
+    
+    Required Methods (must be implemented by subclasses):
+    ----------------------------------------------------
+    - activate(): Turn device on or set to activated values
+    - deactivate(): Turn device off or set to deactivated values
+    - is_on(): Determine if device is currently active
+    - get_power_consumption(): Report current power usage
+    
+    Common Functionality (provided by base class):
+    ----------------------------------------------
+    - Configuration storage
+    - Home Assistant integration
+    - Entity registry access
+    """
 
     def __init__(self, hass: HomeAssistant, device_config: Dict[str, Any]) -> None:
-        """Initialize the device."""
+        """
+        Initialize the device base class.
+        
+        Stores common configuration and references needed by all
+        device types.
+        
+        Args:
+            hass: Home Assistant instance for service calls and state access
+            device_config: Device configuration dict with type-specific settings
+        """
         self.hass = hass
         self.config = device_config
         self.name = device_config["name"]

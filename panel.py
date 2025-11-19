@@ -1,4 +1,36 @@
 
+"""
+Panel Registration for PV Optimizer Integration
+
+This module handles the registration of the custom sidebar panel that provides
+a user interface for the PV Optimizer integration.
+
+Purpose:
+--------
+The panel provides quick access to device status and a button to open the
+configuration flow for managing devices and global settings.
+
+Architecture:
+------------
+1. Static File Serving: Registers the JavaScript file that renders the panel
+2. Panel Registration: Adds the panel to Home Assistant's sidebar
+
+Panel Features:
+--------------
+- Device status overview (connected devices, their states)
+- Quick navigation to configuration (options flow)
+- Real-time status display via WebSocket connection
+- Native Home Assistant styling and integration
+
+Flow:
+-----
+1. User clicks "PV Optimizer" in sidebar
+2. Home Assistant loads the JavaScript file from /pv_optimizer-panel.js
+3. JavaScript connects to WebSocket API to fetch device states
+4. Panel displays current status and configuration button
+5. Button click navigates to integration's options flow for management
+"""
+
 from homeassistant.core import HomeAssistant
 from homeassistant.components.frontend import async_register_built_in_panel
 from homeassistant.components.http import StaticPathConfig
@@ -7,33 +39,78 @@ from .const import FRONTEND_URL, PANEL_TITLE, PANEL_ICON, PANEL_URL
 
 
 async def async_setup_panel(hass: HomeAssistant):
-    """Set up the PV Optimizer panel."""
-    # Serve the JavaScript file
+    """
+    Set up the PV Optimizer sidebar panel.
+    
+    This function performs two key tasks:
+    1. Registers a static file path to serve the panel's JavaScript
+    2. Registers the panel with Home Assistant's frontend
+    
+    Functionality Achieved:
+    ----------------------
+    1. Static File Serving:
+       - Makes the JavaScript panel file accessible via HTTP
+       - Path: /pv_optimizer-panel.js
+       - File: custom_components/pv_optimizer/www/pv-optimizer-panel.js
+       - Caching disabled during development for easier testing
+    
+    2. Panel Registration:
+       - Adds "PV Optimizer" to the sidebar
+       - Icon: solar power symbol (mdi:solar-power)
+       - URL: /pv-optimizer
+       - Requires admin privileges
+       - Loads as a JavaScript module (modern ES6 module)
+    
+    Panel Configuration Details:
+    ---------------------------
+    - component_name="custom": Indicates this is a custom panel
+    - embed_iframe=False: Panel renders directly (not in iframe)
+    - trust_external_script=False: Script is internal (part of integration)
+    - module=True: JavaScript is loaded as ES6 module
+    
+    Technical Notes:
+    ---------------
+    - The panel JavaScript uses LitElement for rendering
+    - WebSocket API provides real-time data updates
+    - Panel integrates with Home Assistant's theme system
+    - Navigation uses Home Assistant's event system
+    
+    Args:
+        hass: Home Assistant instance
+    
+    Returns:
+        None
+    """
+    # Register static file path for the panel JavaScript
+    # This makes the JavaScript file accessible via HTTP at FRONTEND_URL
+    # The file contains the panel's UI code written with LitElement
     await hass.http.async_register_static_paths(
         [
             StaticPathConfig(
-                FRONTEND_URL,
+                FRONTEND_URL,  # URL path: "/pv_optimizer-panel.js"
+                # Physical file path on disk
                 hass.config.path("custom_components/pv_optimizer/www/pv-optimizer-panel.js"),
-                False,  # Don't cache for development
+                False,  # Don't cache - useful during development to see changes immediately
             )
         ]
     )
     
-    # Register the custom panel
+    # Register the custom panel with Home Assistant's frontend
+    # This adds the "PV Optimizer" entry to the sidebar
     async_register_built_in_panel(
         hass=hass,
-        component_name="custom",
-        sidebar_title=PANEL_TITLE,
-        sidebar_icon=PANEL_ICON,
-        frontend_url_path=PANEL_URL,
-        require_admin=True,
+        component_name="custom",  # Indicates this is a custom panel (not built-in)
+        sidebar_title=PANEL_TITLE,  # Text shown in sidebar: "PV Optimizer"
+        sidebar_icon=PANEL_ICON,  # Icon shown in sidebar: "mdi:solar-power"
+        frontend_url_path=PANEL_URL,  # URL path: "pv-optimizer"
+        require_admin=True,  # Only administrators can access this panel
         config={
             "_panel_custom": {
-                "name": "pv-optimizer-panel",
-                "js_url": FRONTEND_URL,
-                "embed_iframe": False,
-                "trust_external_script": False,
-                "module": True,
+                "name": "pv-optimizer-panel",  # Internal identifier for the panel
+                "js_url": FRONTEND_URL,  # JavaScript file to load
+                "embed_iframe": False,  # Render directly (not in iframe) for better integration
+                "trust_external_script": False,  # Script is part of integration (not external)
+                "module": True,  # Load as ES6 module (enables modern JavaScript features)
             }
         },
     )

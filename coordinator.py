@@ -1,4 +1,85 @@
-"""Coordinator for PV Optimizer integration."""
+"""
+Coordinator for PV Optimizer Integration
+
+This module contains the core optimization logic that runs periodically to
+manage device states based on available PV surplus power.
+
+Purpose:
+--------
+The coordinator is the heart of the PV Optimizer. It orchestrates all
+optimization activities on a scheduled cycle, implementing the core algorithm
+that maximizes self-consumption of solar power.
+
+Architecture:
+------------
+Inherits from DataUpdateCoordinator, which provides:
+- Periodic update scheduling
+- State caching and propagation
+- Entity coordination and updates
+- Error handling and retry logic
+
+Core Optimization Algorithm (4-Step Process):
+---------------------------------------------
+1. Data Aggregation:
+   - Collect current states of all devices
+   - Calculate averaged power consumption
+   - Determine device lock status
+   - Track state change timestamps
+
+2. Power Budget Calculation:
+   - Get averaged PV surplus from sensor
+   - Add power from currently running managed devices
+   - Result: Total available power for optimization
+
+3. Ideal State Calculation (Knapsack Algorithm):
+   - Process devices by priority (1 to 10)
+   - For each priority, select best device combination
+   - Maximize power utilization within budget
+   - Respect device locks
+
+4. State Synchronization:
+   - Compare ideal states with actual states
+   - Activate devices that should be ON but aren't
+   - Deactivate devices that should be OFF but aren't
+   - Skip locked devices
+
+Key Concepts:
+------------
+- Device Locking: Prevents state changes when:
+  * Min ON time not elapsed
+  * Min OFF time not elapsed
+  * Manual intervention detected (user override)
+
+- Sliding Window Averaging: Smooths power measurements over time
+  * Reduces optimization based on brief spikes/dips
+  * Configurable window size (default: 5 minutes)
+
+- Priority-Based Selection: Higher priority devices (lower numbers) selected first
+  * Priority 1: Most important (e.g., hot water)
+  * Priority 10: Least important (e.g., optional loads)
+
+- Knapsack Problem: For each priority level, select device combination that:
+  * Maximizes total power consumption
+  * Stays within available budget
+  * Respects physical constraints
+
+State Management:
+----------------
+The coordinator maintains several state dictionaries:
+- device_states: Current state cache for all devices
+- device_instances: PVDevice instances for control
+- device_state_changes: Tracks actual state change timestamps
+
+Data Flow:
+---------
+1. ConfigEntry provides configuration (global + devices)
+2. Coordinator creates device instances
+3. Update cycle runs every N seconds (configurable)
+4. Each cycle fetches fresh data and executes algorithm
+5. Results propagate to sensors via coordinator.data
+6. Entities read from coordinator.data for display
+"""
+
 import asyncio
 import logging
 from datetime import datetime, timedelta
@@ -15,6 +96,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     DOMAIN,
     CONF_SURPLUS_SENSOR_ENTITY_ID,
+    CONF_INVERT_SURPLUS_VALUE,
     CONF_SLIDING_WINDOW_SIZE,
     CONF_OPTIMIZATION_CYCLE_TIME,
     CONF_NAME,
@@ -44,10 +126,51 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class PVOptimizerCoordinator(DataUpdateCoordinator):
-    """Coordinator for PV Optimizer."""
+    """
+    Coordinator for PV Optimizer - manages optimization cycles.
+    
+    This class orchestrates the periodic optimization process, executing
+    the 4-step algorithm to maximize PV self-consumption by controlling
+    connected devices based on available surplus power.
+    
+    Responsibilities:
+    ----------------
+    - Schedule periodic optimization cycles
+    - Aggregate device data (states, power, locks)
+    - Calculate available power budget
+    - Determine optimal device states
+    - Synchronize physical devices with ideal states
+    - Provide data to monitoring entities
+    
+    Inheritance:
+    -----------
+    Extends DataUpdateCoordinator which provides:
+    - Automatic scheduling via update_interval
+    - Async update framework
+    - State caching and distribution
+    - Error handling and recovery
+    - Entity coordination
+    """
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
-        """Initialize the coordinator."""
+        """
+        Initialize the PV Optimizer coordinator.
+        
+        Sets up the coordinator with configuration and prepares for
+        optimization cycles. Creates device instances and initializes
+        state tracking dictionaries.
+        
+        Functionality Achieved:
+        ----------------------
+        1. Configures update interval based on user settings
+        2. Stores references to configuration
+        3. Initializes state tracking structures
+        4. Prepares for first optimization cycle
+        
+        Args:
+            hass: Home Assistant instance
+            config_entry: ConfigEntry with global config and device list
+        """
         super().__init__(
             hass,
             _LOGGER,
@@ -182,7 +305,8 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
                 get_significant_states, self.hass, start_time, now, [power_sensor]
             )
             if power_sensor in history and history[power_sensor]:
-                values = [float(state.state) for state in history[power_sensor].values() if state.state not in ['unknown', 'unavailable']]
+                # history[power_sensor] is a list of State objects
+                values = [float(state.state) for state in history[power_sensor] if state.state not in ['unknown', 'unavailable']]
                 return sum(values) / len(values) if values else 0.0
         except Exception as e:
             _LOGGER.warning(f"Failed to get averaged power for {device_config[CONF_NAME]}: {e}")
@@ -339,6 +463,7 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         # This solves the problem of smoothing surplus readings to avoid optimization
         # decisions based on brief fluctuations.
         surplus_entity = self.global_config[CONF_SURPLUS_SENSOR_ENTITY_ID]
+        invert_value = self.global_config.get(CONF_INVERT_SURPLUS_VALUE, False)
         window_minutes = self.global_config[CONF_SLIDING_WINDOW_SIZE]
         now = datetime.now()
         start_time = now - timedelta(minutes=window_minutes)
@@ -349,9 +474,13 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
                 get_significant_states, self.hass, start_time, now, [surplus_entity]
             )
             if surplus_entity in history and history[surplus_entity]:
-                values = [float(state.state) for state in history[surplus_entity].values() if state.state not in ['unknown', 'unavailable']]
+                # history[surplus_entity] is a list of State objects
+                values = [float(state.state) for state in history[surplus_entity] if state.state not in ['unknown', 'unavailable']]
                 avg = sum(values) / len(values) if values else 0.0
-                _LOGGER.debug(f"Averaged surplus over {window_minutes}min: {avg:.2f}W")
+                # Apply inversion if configured
+                if invert_value:
+                    avg = avg * -1
+                _LOGGER.debug(f"Averaged surplus over {window_minutes}min: {avg:.2f}W (inverted: {invert_value})")
                 return avg
         except Exception as e:
             _LOGGER.warning(f"Failed to get averaged surplus: {e}")
@@ -359,5 +488,8 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         # Fallback to current state
         state = self.hass.states.get(surplus_entity)
         current = float(state.state) if state and state.state not in ['unknown', 'unavailable'] else 0.0
-        _LOGGER.debug(f"Using current surplus (fallback): {current:.2f}W")
+        # Apply inversion if configured
+        if invert_value:
+            current = current * -1
+        _LOGGER.debug(f"Using current surplus (fallback): {current:.2f}W (inverted: {invert_value})")
         return current

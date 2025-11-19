@@ -1,4 +1,62 @@
-"""Numbers for PV Optimizer integration."""
+"""
+Number Entities for PV Optimizer Integration
+
+This module creates number entities that allow users to:
+1. Control numeric device targets (for numeric-type devices)
+2. Dynamically adjust device configuration (priority, min times)
+
+Purpose:
+--------
+Provide interactive controls for both device operation and configuration
+through Home Assistant's native number entity interface.
+
+Entity Types Created:
+--------------------
+1. Numeric Target Controls (PVOptimizerNumber):
+   - For numeric-type devices only
+   - One number entity per configured target
+   - Allows manual adjustment of target entity values
+   - Example: Adjust heat pump temperature setpoint manually
+
+2. Dynamic Configuration Numbers:
+   - Priority (PVOptimizerPriorityNumber): Adjust device priority (1-10)
+   - Min On Time (PVOptimizerMinOnTimeNumber): Adjust minimum on time
+   - Min Off Time (PVOptimizerMinOffTimeNumber): Adjust minimum off time
+   - Created for ALL devices (both switch and numeric types)
+   - Changes persist to config entry and apply immediately
+
+Architecture:
+------------
+All number entities extend CoordinatorEntity to:
+- Receive updates when coordinator refreshes
+- Link to parent device in device registry
+- Maintain consistent state across entities
+
+Dynamic Configuration Pattern:
+-----------------------------
+The dynamic configuration numbers (priority, min times) solve the problem
+of allowing runtime adjustments without requiring integration reload.
+
+Flow:
+1. User adjusts number via UI
+2. async_set_native_value() called
+3. Value stored in coordinator.devices list
+4. Config entry updated with new data
+5. Changes take effect in next optimization cycle
+6. No reload needed (unlike options flow changes)
+
+Benefits:
+- Immediate feedback
+- No service interruption
+- Easy experimentation with settings
+- Fine-tuning without UI navigation
+
+Device Linking:
+--------------
+All entities include device_info to link them to their parent device,
+enabling proper organization in the device UI.
+"""
+
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -20,6 +78,7 @@ from .const import (
     CONF_PRIORITY,
     CONF_MIN_ON_TIME,
     CONF_MIN_OFF_TIME,
+    normalize_device_name,
 )
 from .coordinator import PVOptimizerCoordinator
 
@@ -67,11 +126,13 @@ class PVOptimizerNumber(CoordinatorEntity, NumberEntity):
         self._deactivated_value = target[CONF_DEACTIVATED_VALUE]
         self._attr_name = f"PVO {self._device_name} {self._numeric_entity_id.split('.')[-1]}"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{self._device_name}_{self._numeric_entity_id}"
+        self._attr_entity_registry_enabled_default = True
         # Get device type for model
         device_type = self._device.get("type", "Unknown")
         
+        normalized_name = normalize_device_name(self._device_name)
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{self._device_name}")},
+            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
             "name": f"PVO {self._device_name}",
             "manufacturer": "PV Optimizer",
             "model": f"{device_type.capitalize()} Device",
@@ -81,12 +142,12 @@ class PVOptimizerNumber(CoordinatorEntity, NumberEntity):
         self._attr_max_value = max(self._activated_value, self._deactivated_value)
 
     @property
-    def value(self) -> float:
+    def native_value(self) -> float:
         """Return the current value."""
         state = self.hass.states.get(self._numeric_entity_id)
         return float(state.state) if state else 0.0
 
-    async def async_set_value(self, value: float) -> None:
+    async def async_set_native_value(self, value: float) -> None:
         """Set the value."""
         # This is for manual control; the coordinator handles optimization
         # But we can allow manual override
@@ -105,6 +166,7 @@ class PVOptimizerPriorityNumber(CoordinatorEntity, NumberEntity):
         self._device_name = device_name
         self._attr_name = f"PVO {device_name} Priority"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_priority"
+        self._attr_entity_registry_enabled_default = True
         self._attr_min_value = 1
         self._attr_max_value = 10
         self._attr_step = 1
@@ -115,8 +177,9 @@ class PVOptimizerPriorityNumber(CoordinatorEntity, NumberEntity):
                 device_type = device.get("type", "Unknown")
                 break
         
+        normalized_name = normalize_device_name(device_name)
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{device_name}")},
+            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
             "name": f"PVO {device_name}",
             "manufacturer": "PV Optimizer",
             "model": f"{device_type.capitalize()} Device",
@@ -154,6 +217,7 @@ class PVOptimizerMinOnTimeNumber(CoordinatorEntity, NumberEntity):
         self._device_name = device_name
         self._attr_name = f"PVO {device_name} Min On Time"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_min_on_time"
+        self._attr_entity_registry_enabled_default = True
         self._attr_min_value = 0
         self._attr_max_value = 1440  # 24 hours in minutes
         self._attr_step = 1
@@ -165,8 +229,9 @@ class PVOptimizerMinOnTimeNumber(CoordinatorEntity, NumberEntity):
                 device_type = device.get("type", "Unknown")
                 break
         
+        normalized_name = normalize_device_name(device_name)
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{device_name}")},
+            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
             "name": f"PVO {device_name}",
             "manufacturer": "PV Optimizer",
             "model": f"{device_type.capitalize()} Device",
@@ -201,6 +266,7 @@ class PVOptimizerMinOffTimeNumber(CoordinatorEntity, NumberEntity):
         self._device_name = device_name
         self._attr_name = f"PVO {device_name} Min Off Time"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_min_off_time"
+        self._attr_entity_registry_enabled_default = True
         self._attr_min_value = 0
         self._attr_max_value = 1440  # 24 hours in minutes
         self._attr_step = 1
@@ -212,8 +278,9 @@ class PVOptimizerMinOffTimeNumber(CoordinatorEntity, NumberEntity):
                 device_type = device.get("type", "Unknown")
                 break
         
+        normalized_name = normalize_device_name(device_name)
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{device_name}")},
+            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
             "name": f"PVO {device_name}",
             "manufacturer": "PV Optimizer",
             "model": f"{device_type.capitalize()} Device",

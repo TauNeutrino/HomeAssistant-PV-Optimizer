@@ -1,4 +1,74 @@
-"""Switches for PV Optimizer integration."""
+"""
+Switch Entities for PV Optimizer Integration
+
+This module creates switch entities that allow users to:
+1. Manually control switch-type devices
+2. Enable/disable optimization per device
+
+Purpose:
+--------
+Provide interactive on/off controls for both device operation and
+optimization control through Home Assistant's native switch interface.
+
+Entity Types Created:
+--------------------
+1. Device Control Switches (PVOptimizerSwitch):
+   - For switch-type devices only
+   - Mirrors the actual device switch state
+   - Allows manual override (creates manual intervention lock)
+   - Respects invert logic if configured
+   - Example: Manually turn water heater on/off
+
+2. Optimization Control Switches (PVOptimizerOptimizationSwitch):
+   - Created for ALL devices (switch and numeric types)
+   - Master enable/disable for optimization
+   - When OFF: Coordinator ignores device during optimization
+   - When ON: Device participates in optimization cycles
+   - Changes persist to config entry immediately
+   - No reload required
+
+Architecture:
+------------
+All switch entities extend CoordinatorEntity to:
+- Receive updates when coordinator refreshes
+- Link to parent device in device registry
+- Maintain consistent state across entities
+
+Manual Override Detection:
+-------------------------
+When user manually toggles a device switch:
+1. Device state changes
+2. Coordinator detects mismatch between actual and target state
+3. Device becomes locked (manual intervention)
+4. Optimizer respects lock and won't change state
+5. Lock persists until device state matches optimizer's intended state
+
+This solves the problem of respecting user overrides during optimization.
+
+Dynamic Configuration Pattern:
+-----------------------------
+The optimization enable/disable switch demonstrates dynamic configuration:
+
+Flow:
+1. User toggles optimization switch
+2. async_turn_on/off() called
+3. Value updated in coordinator.devices list
+4. Config entry updated with new data
+5. Next cycle respects new setting
+6. No integration reload required
+
+Benefits:
+- Immediate control
+- No service interruption
+- Per-device granularity
+- Easy temporary exclusion
+
+Device Linking:
+--------------
+All entities include device_info to link them to their parent device,
+enabling proper organization in the device UI.
+"""
+
 import logging
 from typing import Any, Dict, Optional
 
@@ -16,6 +86,7 @@ from .const import (
     CONF_INVERT_SWITCH,
     TYPE_SWITCH,
     CONF_OPTIMIZATION_ENABLED,
+    normalize_device_name,
 )
 from .coordinator import PVOptimizerCoordinator
 
@@ -57,11 +128,13 @@ class PVOptimizerSwitch(CoordinatorEntity, SwitchEntity):
         self._invert = device.get(CONF_INVERT_SWITCH, False)
         self._attr_name = f"PVO {self._device_name}"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{self._device_name}_switch"
+        self._attr_entity_registry_enabled_default = True
         # Get device type for model
         device_type = self._device.get("type", "Unknown")
+        normalized_name = normalize_device_name(self._device_name)
         
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{self._device_name}")},
+            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
             "name": f"PVO {self._device_name}",
             "manufacturer": "PV Optimizer",
             "model": f"{device_type.capitalize()} Device",
@@ -106,15 +179,17 @@ class PVOptimizerOptimizationSwitch(CoordinatorEntity, SwitchEntity):
         self._device_name = device_name
         self._attr_name = f"PVO {device_name} Optimization Enabled"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_optimization_enabled"
+        self._attr_entity_registry_enabled_default = True
         # Get device type for model
         device_type = "Unknown"
         for device in coordinator.devices:
             if device[CONF_NAME] == device_name:
                 device_type = device.get("type", "Unknown")
                 break
+        normalized_name = normalize_device_name(device_name)
         
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{device_name}")},
+            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
             "name": f"PVO {device_name}",
             "manufacturer": "PV Optimizer",
             "model": f"{device_type.capitalize()} Device",

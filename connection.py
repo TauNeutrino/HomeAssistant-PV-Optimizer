@@ -1,312 +1,218 @@
+"""
+WebSocket API for PV Optimizer Integration
+
+This module provides real-time communication between the Home Assistant backend
+and the frontend panel via WebSocket connections.
+
+Purpose:
+--------
+Enable the frontend panel to fetch current configuration and device states
+in real-time without requiring page refreshes or polling.
+
+Architecture:
+------------
+Uses Home Assistant's built-in WebSocket API framework to:
+1. Register custom WebSocket commands
+2. Validate incoming requests
+3. Send responses with configuration and state data
+4. Handle errors gracefully
+
+WebSocket Commands:
+------------------
+- pv_optimizer/config: Fetches complete configuration and current device states
+
+Data Flow:
+----------
+1. Frontend panel opens WebSocket connection to Home Assistant
+2. Panel sends command: {"type": "pv_optimizer/config", "id": 123}
+3. Backend retrieves data from coordinator
+4. Backend sends response with config and states
+5. Panel receives data and updates UI
+
+Response Structure:
+------------------
+{
+    "global_config": {
+        "surplus_sensor_entity_id": "sensor.grid_power",
+        "sliding_window_size": 5,
+        "optimization_cycle_time": 60,
+        ...
+    },
+    "devices": [
+        {
+            "config": {
+                "name": "Hot Water",
+                "type": "switch",
+                "priority": 1,
+                "power": 2000,
+                ...
+            },
+            "state": {
+                "is_on": true,
+                "is_locked": false,
+                "measured_power_avg": 1950,
+                "pvo_last_target_state": true
+            }
+        },
+        ...
+    ]
+}
+"""
 
 import logging
 import voluptuous as vol
 
 from homeassistant.components import websocket_api
 from homeassistant.core import callback
-from homeassistant.helpers import entity_registry as er
 
-from .const import (
-    DOMAIN,
-    CONF_NAME,
-    CONF_TYPE,
-    CONF_PRIORITY,
-    CONF_POWER,
-    CONF_SWITCH_ENTITY_ID,
-    CONF_NUMERIC_TARGETS,
-    CONF_NUMERIC_ENTITY_ID,
-    CONF_ACTIVATED_VALUE,
-    CONF_DEACTIVATED_VALUE,
-    CONF_MIN_ON_TIME,
-    CONF_MIN_OFF_TIME,
-    CONF_OPTIMIZATION_ENABLED,
-    CONF_MEASURED_POWER_ENTITY_ID,
-    CONF_POWER_THRESHOLD,
-    CONF_INVERT_SWITCH,
-    TYPE_SWITCH,
-    TYPE_NUMERIC,
-)
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+
 async def async_setup_connection(hass):
-    """Set up WebSocket API handlers for PV Optimizer."""
+    """
+    Set up WebSocket API handlers for PV Optimizer.
+    
+    This function registers custom WebSocket commands that the frontend panel
+    uses to communicate with the backend.
+    
+    Functionality Achieved:
+    ----------------------
+    1. Registers the "pv_optimizer/config" command
+    2. Provides real-time access to configuration and device states
+    3. Enables the panel to display current system status
+    
+    WebSocket Communication Pattern:
+    -------------------------------
+    - Frontend connects via Home Assistant's WebSocket endpoint
+    - Sends command with type and unique ID
+    - Backend processes command and validates access
+    - Returns structured data or error message
+    - Frontend updates UI based on response
+    
+    Security:
+    ---------
+    - Commands require admin privileges (panel requires admin)
+    - WebSocket connection is authenticated by Home Assistant
+    - No sensitive data is exposed (all data is user-configured)
+    
+    Args:
+        hass: Home Assistant instance
+    
+    Returns:
+        None
+    """
     
     @websocket_api.websocket_command(
         {
+            # Command type that client must send
+            # Example: {"type": "pv_optimizer/config", "id": 1}
             vol.Required("type"): f"{DOMAIN}/config",
         }
     )
     @websocket_api.async_response
     async def handle_get_config(hass, connection, msg):
-        """Get the PV Optimizer configuration."""
+        """
+        Handle the 'pv_optimizer/config' WebSocket command.
+        
+        This command retrieves the complete configuration and current state
+        of all devices managed by the PV Optimizer.
+        
+        Functionality Achieved:
+        ----------------------
+        1. Validates that PV Optimizer is properly initialized
+        2. Retrieves coordinator instance (contains all data)
+        3. Extracts global configuration settings
+        4. Collects device configurations and current states
+        5. Combines data into structured response
+        6. Sends response to frontend panel
+        
+        Response Data:
+        -------------
+        - global_config: System-wide settings (surplus sensor, cycle time, etc.)
+        - devices: Array of device objects with:
+            - config: Static configuration (name, type, priority, power, etc.)
+            - state: Dynamic state (is_on, is_locked, measured_power_avg, etc.)
+        
+        Error Handling:
+        --------------
+        - Returns "not_ready" error if integration not initialized
+        - Returns "not_ready" error if coordinator not available
+        - Logs errors for debugging
+        
+        Use Cases:
+        ----------
+        - Panel initial load (fetch all data)
+        - Panel refresh (update device states)
+        - Status monitoring (check if devices are locked, etc.)
+        
+        Args:
+            hass: Home Assistant instance
+            connection: WebSocket connection object
+            msg: Message dict with command type and id
+        
+        Returns:
+            None (sends response via connection.send_result/send_error)
+        """
+        # Check if PV Optimizer domain is initialized
+        # hass.data[DOMAIN] is created in __init__.py's async_setup()
         if not hass.data.get(DOMAIN):
-            connection.send_error(msg["id"], "not_ready", "PV Optimizer not configured")
+            # Integration not yet set up - send error response
+            connection.send_error(
+                msg["id"],
+                "not_ready",
+                "PV Optimizer not configured"
+            )
             return
             
         try:
+            # Get the coordinator instance
+            # hass.data[DOMAIN] is a dict: {entry_id: coordinator}
+            # We take the first (and typically only) coordinator
             coordinator = next(iter(hass.data[DOMAIN].values()))
+            
+            # Build response data structure
             response_data = {
+                # Global configuration from coordinator
+                # Includes: surplus_sensor_entity_id, sliding_window_size,
+                #           optimization_cycle_time, invert_surplus_value
                 "global_config": coordinator.global_config,
+                
+                # Will be populated with device data
                 "devices": [],
             }
 
+            # Iterate through all configured devices
             for device_config in coordinator.devices:
-                device_name = device_config[CONF_NAME]
-                device_state = coordinator.device_states.get(device_name, {})
-                response_data["devices"].append({
-                    "config": device_config,
-                    "state": device_state,
-                })
-            connection.send_result(msg["id"], response_data)
-        except (StopIteration, KeyError, AttributeError) as e:
-            connection.send_error(msg["id"], "not_ready", f"PV Optimizer not ready: {str(e)}")
-
-    @websocket_api.websocket_command(
-        {
-            vol.Required("type"): f"{DOMAIN}/set_config",
-            vol.Optional("data"): dict,
-        }
-    )
-    @websocket_api.async_response
-    async def handle_set_config(hass, connection, msg):
-        """Set the PV Optimizer global configuration."""
-        data = msg.get("data", {})
-        
-        if not hass.data.get(DOMAIN):
-            connection.send_error(msg["id"], "not_ready", "PV Optimizer not configured")
-            return
-            
-        try:
-            coordinator = next(iter(hass.data[DOMAIN].values()))
-            await coordinator.async_set_config(data)
-            connection.send_result(msg["id"])
-        except (StopIteration, KeyError, AttributeError) as e:
-            connection.send_error(msg["id"], "not_ready", f"PV Optimizer not ready: {str(e)}")
-
-    @websocket_api.websocket_command(
-        {
-            vol.Required("type"): f"{DOMAIN}/add_device",
-            vol.Required("device"): dict,
-        }
-    )
-    @websocket_api.async_response
-    async def handle_add_device(hass, connection, msg):
-        """Add a new device to PV Optimizer."""
-        device_config = msg.get("device", {})
-        
-        if not hass.data.get(DOMAIN):
-            connection.send_error(msg["id"], "not_ready", "PV Optimizer not configured")
-            return
-            
-        try:
-            coordinator = next(iter(hass.data[DOMAIN].values()))
-            
-            # Validate device configuration
-            error = _validate_device_config(device_config, coordinator.devices)
-            if error:
-                connection.send_error(msg["id"], "invalid_config", error)
-                return
-            
-            # Add device to coordinator
-            coordinator.devices.append(device_config)
-            
-            # Update config entry
-            config_data = dict(coordinator.config_entry.data)
-            config_data["devices"] = coordinator.devices
-            hass.config_entries.async_update_entry(coordinator.config_entry, data=config_data)
-            
-            # Reload the config entry to create new entities
-            await hass.config_entries.async_reload(coordinator.config_entry.entry_id)
-            
-            _LOGGER.info(f"Added device: {device_config.get(CONF_NAME)}")
-            connection.send_result(msg["id"], {"success": True})
-        except (StopIteration, KeyError, AttributeError) as e:
-            connection.send_error(msg["id"], "error", f"Failed to add device: {str(e)}")
-
-    @websocket_api.websocket_command(
-        {
-            vol.Required("type"): f"{DOMAIN}/update_device",
-            vol.Required("device_name"): str,
-            vol.Required("device"): dict,
-        }
-    )
-    @websocket_api.async_response
-    async def handle_update_device(hass, connection, msg):
-        """Update an existing device in PV Optimizer."""
-        device_name = msg.get("device_name")
-        device_config = msg.get("device", {})
-        
-        if not hass.data.get(DOMAIN):
-            connection.send_error(msg["id"], "not_ready", "PV Optimizer not configured")
-            return
-            
-        try:
-            coordinator = next(iter(hass.data[DOMAIN].values()))
-            
-            # Find device index
-            device_index = None
-            for i, device in enumerate(coordinator.devices):
-                if device[CONF_NAME] == device_name:
-                    device_index = i
-                    break
-            
-            if device_index is None:
-                connection.send_error(msg["id"], "not_found", f"Device '{device_name}' not found")
-                return
-            
-            # Validate device configuration (excluding itself from duplicate check)
-            other_devices = [d for d in coordinator.devices if d[CONF_NAME] != device_name]
-            error = _validate_device_config(device_config, other_devices)
-            if error:
-                connection.send_error(msg["id"], "invalid_config", error)
-                return
-            
-            # Update device
-            coordinator.devices[device_index] = device_config
-            
-            # Update config entry
-            config_data = dict(coordinator.config_entry.data)
-            config_data["devices"] = coordinator.devices
-            hass.config_entries.async_update_entry(coordinator.config_entry, data=config_data)
-            
-            # Reload if device name changed (requires entity recreation)
-            if device_name != device_config.get(CONF_NAME):
-                await hass.config_entries.async_reload(coordinator.config_entry.entry_id)
-            
-            _LOGGER.info(f"Updated device: {device_name} -> {device_config.get(CONF_NAME)}")
-            connection.send_result(msg["id"], {"success": True})
-        except (StopIteration, KeyError, AttributeError) as e:
-            connection.send_error(msg["id"], "error", f"Failed to update device: {str(e)}")
-
-    @websocket_api.websocket_command(
-        {
-            vol.Required("type"): f"{DOMAIN}/delete_device",
-            vol.Required("device_name"): str,
-        }
-    )
-    @websocket_api.async_response
-    async def handle_delete_device(hass, connection, msg):
-        """Delete a device from PV Optimizer."""
-        device_name = msg.get("device_name")
-        
-        if not hass.data.get(DOMAIN):
-            connection.send_error(msg["id"], "not_ready", "PV Optimizer not configured")
-            return
-            
-        try:
-            coordinator = next(iter(hass.data[DOMAIN].values()))
-            
-            # Find and remove device
-            device_found = False
-            for i, device in enumerate(coordinator.devices):
-                if device[CONF_NAME] == device_name:
-                    coordinator.devices.pop(i)
-                    device_found = True
-                    break
-            
-            if not device_found:
-                connection.send_error(msg["id"], "not_found", f"Device '{device_name}' not found")
-                return
-            
-            # Update config entry
-            config_data = dict(coordinator.config_entry.data)
-            config_data["devices"] = coordinator.devices
-            hass.config_entries.async_update_entry(coordinator.config_entry, data=config_data)
-            
-            # Reload to remove entities
-            await hass.config_entries.async_reload(coordinator.config_entry.entry_id)
-            
-            _LOGGER.info(f"Deleted device: {device_name}")
-            connection.send_result(msg["id"], {"success": True})
-        except (StopIteration, KeyError, AttributeError) as e:
-            connection.send_error(msg["id"], "error", f"Failed to delete device: {str(e)}")
-
-    @websocket_api.websocket_command(
-        {
-            vol.Required("type"): f"{DOMAIN}/get_available_entities",
-            vol.Optional("domain"): str,
-        }
-    )
-    @websocket_api.async_response
-    async def handle_get_available_entities(hass, connection, msg):
-        """Get available entities for device configuration."""
-        domain = msg.get("domain")
-        
-        try:
-            entity_reg = er.async_get(hass)
-            entities = []
-            
-            for entity in entity_reg.entities.values():
-                # Filter by domain if specified
-                if domain and not entity.entity_id.startswith(f"{domain}."):
-                    continue
+                device_name = device_config["name"]
                 
-                state = hass.states.get(entity.entity_id)
-                if state:
-                    entities.append({
-                        "entity_id": entity.entity_id,
-                        "name": entity.name or state.attributes.get("friendly_name", entity.entity_id),
-                        "domain": entity.domain,
-                    })
+                # Get current state from coordinator's device_states cache
+                # This includes: is_on, is_locked, measured_power_avg,
+                #                pvo_last_target_state, last_update
+                device_state = coordinator.device_states.get(device_name, {})
+                
+                # Add device data to response
+                response_data["devices"].append({
+                    "config": device_config,  # Static configuration
+                    "state": device_state,    # Dynamic state
+                })
             
-            connection.send_result(msg["id"], {"entities": entities})
-        except Exception as e:
-            connection.send_error(msg["id"], "error", f"Failed to get entities: {str(e)}")
+            # Send successful response to frontend
+            connection.send_result(msg["id"], response_data)
+            
+        except (StopIteration, KeyError, AttributeError) as e:
+            # Handle errors that might occur during data retrieval
+            # - StopIteration: No coordinator found
+            # - KeyError: Missing data in coordinator
+            # - AttributeError: Coordinator not properly initialized
+            _LOGGER.error(f"Error retrieving PV Optimizer config: {e}")
+            connection.send_error(
+                msg["id"],
+                "not_ready",
+                f"PV Optimizer not ready: {str(e)}"
+            )
 
-    # Register all commands
+    # Register the command with Home Assistant's WebSocket API
+    # This makes the command available to frontend connections
     websocket_api.async_register_command(hass, handle_get_config)
-    websocket_api.async_register_command(hass, handle_set_config)
-    websocket_api.async_register_command(hass, handle_add_device)
-    websocket_api.async_register_command(hass, handle_update_device)
-    websocket_api.async_register_command(hass, handle_delete_device)
-    websocket_api.async_register_command(hass, handle_get_available_entities)
-
-
-def _validate_device_config(device_config, existing_devices):
-    """Validate device configuration."""
-    # Check required fields
-    if not device_config.get(CONF_NAME):
-        return "Device name is required"
-    
-    if not device_config.get(CONF_TYPE):
-        return "Device type is required"
-    
-    if not device_config.get(CONF_PRIORITY):
-        return "Device priority is required"
-    
-    if not device_config.get(CONF_POWER):
-        return "Device power is required"
-    
-    # Check for duplicate names
-    for device in existing_devices:
-        if device[CONF_NAME] == device_config[CONF_NAME]:
-            return f"Device name '{device_config[CONF_NAME]}' already exists"
-    
-    # Validate type-specific fields
-    device_type = device_config[CONF_TYPE]
-    
-    if device_type == TYPE_SWITCH:
-        if not device_config.get(CONF_SWITCH_ENTITY_ID):
-            return "Switch entity ID is required for switch-type devices"
-    
-    elif device_type == TYPE_NUMERIC:
-        if not device_config.get(CONF_NUMERIC_TARGETS):
-            return "Numeric targets are required for numeric-type devices"
-        
-        targets = device_config[CONF_NUMERIC_TARGETS]
-        if not isinstance(targets, list) or len(targets) == 0:
-            return "At least one numeric target is required"
-        
-        for target in targets:
-            if not target.get(CONF_NUMERIC_ENTITY_ID):
-                return "Numeric entity ID is required for all targets"
-            if CONF_ACTIVATED_VALUE not in target:
-                return "Activated value is required for all targets"
-            if CONF_DEACTIVATED_VALUE not in target:
-                return "Deactivated value is required for all targets"
-    
-    else:
-        return f"Invalid device type: {device_type}"
-    
-    return None
