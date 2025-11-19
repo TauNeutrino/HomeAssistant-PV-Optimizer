@@ -32,10 +32,11 @@ Flow:
 """
 
 from homeassistant.core import HomeAssistant
-from homeassistant.components.frontend import async_register_built_in_panel
+from homeassistant.loader import async_get_integration
+from homeassistant.components import panel_custom
 from homeassistant.components.http import StaticPathConfig
 
-from .const import FRONTEND_URL, PANEL_TITLE, PANEL_ICON, PANEL_URL
+from .const import DOMAIN, FRONTEND_URL, PANEL_TITLE, PANEL_ICON, PANEL_URL
 
 
 async def async_setup_panel(hass: HomeAssistant):
@@ -95,22 +96,21 @@ async def async_setup_panel(hass: HomeAssistant):
         ]
     )
     
+    # Get version from manifest.json for cache busting
+    integration = await async_get_integration(hass, DOMAIN)
+    version = integration.version
+    
+    module_url_with_version = f"{FRONTEND_URL}?v={version}"
+
     # Register the custom panel with Home Assistant's frontend
     # This adds the "PV Optimizer" entry to the sidebar
-    async_register_built_in_panel(
+    await panel_custom.async_register_panel(
         hass=hass,
-        component_name="pv_optimizer",  # Indicates this is a custom panel (not built-in)
-        sidebar_title=PANEL_TITLE,  # Text shown in sidebar: "PV Optimizer"
-        sidebar_icon=PANEL_ICON,  # Icon shown in sidebar: "mdi:solar-power"
-        frontend_url_path=PANEL_URL,  # URL path: "pv-optimizer"
-        require_admin=True,  # Only administrators can access this panel
-        config={
-            "_panel_custom": {
-                "name": "pv-optimizer-panel",  # Internal identifier for the panel
-                "js_url": FRONTEND_URL,  # JavaScript file to load
-                "embed_iframe": False,  # Render directly (not in iframe) for better integration
-                "trust_external_script": False,  # Script is part of integration (not external)
-                "module": True,  # Load as ES6 module (enables modern JavaScript features)
-            }
-        },
+        webcomponent_name="pv-optimizer-panel",
+        frontend_url_path=PANEL_URL,
+        sidebar_title=PANEL_TITLE,
+        sidebar_icon=PANEL_ICON,
+        module_url=module_url_with_version,
+        embed_iframe=False,
+        require_admin=False,
     )
