@@ -99,7 +99,7 @@ async def async_setup_panel(hass: HomeAssistant):
     # This adds the "PV Optimizer" entry to the sidebar
     async_register_built_in_panel(
         hass=hass,
-        component_name="custom",  # Indicates this is a custom panel (not built-in)
+        component_name="custom_pv_optimizer",  # Indicates this is a custom panel (not built-in)
         sidebar_title=PANEL_TITLE,  # Text shown in sidebar: "PV Optimizer"
         sidebar_icon=PANEL_ICON,  # Icon shown in sidebar: "mdi:solar-power"
         frontend_url_path=PANEL_URL,  # URL path: "pv-optimizer"

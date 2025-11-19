@@ -1,14 +1,4 @@
-/**
- * PV Optimizer Panel for Home Assistant
- * Status overview with navigation to config flow
- * Based on browser_mod design patterns
- */
-
-import {
-  LitElement,
-  html,
-  css,
-} from "https://cdn.jsdelivr.net/gh/lit/dist@2/core/lit-core.min.js";
+import { LitElement, html, css } from "lit";
 
 class PvOptimizerPanel extends LitElement {
   static get properties() {
@@ -47,8 +37,18 @@ class PvOptimizerPanel extends LitElement {
     }
   }
 
+  updated(changedProperties) {
+    if (changedProperties.has("hass") && this.hass && !this._config) {
+      this._fetchConfig();
+    }
+  }
+
   async _fetchConfig() {
-    if (!this.hass?.connection) {
+    if (!this.hass) {
+      return;
+    }
+
+    if (!this.hass.connection) {
       this._error = "WebSocket connection not available";
       this._loading = false;
       return;
@@ -227,9 +227,9 @@ class PvOptimizerPanel extends LitElement {
                   ${devices.map((device) => this._renderDeviceCard(device))}
                 </div>
               `}
-        </div>
-      </ha-card>
-    `;
+          </div>
+        </ha-card>
+      `;
   }
 
   render() {
@@ -377,4 +377,5 @@ class PvOptimizerPanel extends LitElement {
   }
 }
 
-customElements.define("pv-optimizer-panel", PvOptimizerPanel);
+// Register the custom element
+window.customElements.define("pv-optimizer-panel", PvOptimizerPanel);
