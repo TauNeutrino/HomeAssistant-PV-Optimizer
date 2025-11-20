@@ -209,7 +209,7 @@ async def async_setup_connection(hass):
             potential_power = sum(d["config"]["power"] for d in response_data["devices"] if d["state"].get("is_on"))
             measured_power = sum(d["state"]["measured_power_avg"] for d in response_data["devices"] if d["state"].get("is_on") and d["state"].get("measured_power_avg") is not None)
             
-            last_update_timestamp = coordinator.last_update_success
+            last_update_timestamp = coordinator.data.get("last_update_timestamp")
             elapsed_seconds = (datetime.now(last_update_timestamp.tzinfo) - last_update_timestamp).total_seconds() if last_update_timestamp else None
 
             response_data["optimizer_stats"] = {

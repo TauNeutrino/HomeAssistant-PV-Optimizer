@@ -234,6 +234,7 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
             "power_budget": power_budget,
             "surplus_avg": surplus_avg,
             "ideal_on_list": ideal_on_list,
+            "last_update_timestamp": dt_util.now(),
         }
 
     async def _aggregate_device_data(self) -> None:
