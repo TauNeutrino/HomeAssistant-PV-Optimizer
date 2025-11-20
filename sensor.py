@@ -1,70 +1,14 @@
 """
 Sensor Entities for PV Optimizer Integration
 
-This module creates sensor entities for monitoring the optimization system
-and individual device states.
-
-Purpose:
---------
-Provide comprehensive monitoring capabilities through Home Assistant's
-sensor entities, enabling:
-1. System-wide monitoring (power budget, surplus)
-2. Per-device monitoring (lock status, power, targets)
-3. Configuration visibility (window size, cycle time)
-4. Historical data tracking
-
-Sensor Categories:
------------------
-1. Controller Sensors (Global):
-   - Power Budget: Total available power for optimization
-   - Averaged Surplus: Smoothed PV surplus over sliding window
-   - Current Surplus: Real-time surplus (sign-corrected)
-   - Sliding Window Size: Configuration value
-   - Cycle Time: Configuration value
-
-2. Device Sensors (Per-Device):
-   - Locked: Whether device is locked in current state
-   - Measured Power Avg: Averaged power consumption
-   - Last Target State: Last state set by optimizer
-   - Contribution to Budget: Power contributed when running
-
-Architecture:
-------------
-All sensors extend CoordinatorEntity to:
-- Automatically update when coordinator refreshes
-- Access coordinator data efficiently
-- Link to appropriate parent device
-- Maintain consistent state
-
-Data Flow:
----------
-1. Coordinator runs optimization cycle
-2. Coordinator updates self.data dict with results
-3. Coordinator updates self.device_states with device info
-4. CoordinatorEntity triggers entity updates
-5. Sensors read from coordinator data
-6. Home Assistant displays updated values
-
-Benefits:
---------
-- Real-time monitoring without polling
-- Historical data via recorder integration
-- Ability to create dashboards and automations
-- Debugging and tuning visibility
-- Performance analysis
-
-Design Pattern:
---------------
-Uses Template Method pattern with base classes providing
-common structure while allowing customization of:
-- Data source (coordinator.data vs coordinator.device_states)
-- State calculation
-- Attributes assignment
-- Device linkage
+UPDATED: Added sensors for simulation results
+- simulation_power_budget: Budget available for simulation
+- simulation_ideal_devices: List of devices in simulation ideal state
+- real_ideal_devices: List of devices in real ideal state (for comparison)
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
@@ -99,14 +43,19 @@ async def async_setup_entry(
 
     entities = []
 
-    # Controller sensors
+    # Controller sensors (existing)
     entities.append(PVOptimizerControllerSensor(coordinator, "power_budget", "Power Budget", "W", 1))
     entities.append(PVOptimizerControllerSensor(coordinator, "surplus_avg", "Averaged Surplus", "W", 1))
     entities.append(PVOptimizerCurrentSurplusSensor(coordinator))
     entities.append(PVOptimizerConfigSensor(coordinator, "sliding_window", "Sliding Window Size", "min"))
     entities.append(PVOptimizerConfigSensor(coordinator, "cycle_time", "Optimization Cycle Time", "s"))
 
-    # Appliance sensors - monitoring entities as per requirements
+    # NEW: Simulation sensors
+    entities.append(PVOptimizerControllerSensor(coordinator, "simulation_power_budget", "Simulation Power Budget", "W", 1))
+    entities.append(PVOptimizerIdealDevicesListSensor(coordinator, "ideal_on_list", "Real Ideal Devices"))
+    entities.append(PVOptimizerIdealDevicesListSensor(coordinator, "simulation_ideal_on_list", "Simulation Ideal Devices"))
+
+    # Appliance sensors (existing) - monitoring entities
     for device in coordinator.devices:
         device_name = device[CONF_NAME]
         entities.append(PVOptimizerApplianceSensor(coordinator, device_name, ATTR_IS_LOCKED, "Locked", None))
@@ -149,6 +98,73 @@ class PVOptimizerControllerSensor(CoordinatorEntity, SensorEntity):
         return value
 
 
+class PVOptimizerIdealDevicesListSensor(CoordinatorEntity, SensorEntity):
+    """
+    Sensor for displaying ideal device lists (real or simulation).
+    
+    Purpose:
+    -------
+    Provides a sensor that shows which devices are in the ideal ON state.
+    The list of device names is stored as an attribute for frontend display.
+    The sensor state shows the count of devices.
+    
+    NEW: Created for simulation feature to display both real and simulation results.
+    """
+
+    def __init__(self, coordinator: PVOptimizerCoordinator, data_key: str, name: str) -> None:
+        """Initialize the ideal devices list sensor."""
+        super().__init__(coordinator)
+        self._data_key = data_key
+        self._attr_name = f"PV Optimizer {name}"
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{data_key}_list"
+        self._attr_icon = "mdi:format-list-checks"
+        self._attr_entity_registry_enabled_default = True
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, coordinator.config_entry.entry_id)},
+            "name": "PV Optimizer Controller",
+            "manufacturer": "Custom",
+            "model": "PV Optimizer",
+        }
+
+    @property
+    def state(self) -> int:
+        """Return the count of devices in the ideal list."""
+        if self.coordinator.data is None:
+            return 0
+        ideal_list = self.coordinator.data.get(self._data_key, [])
+        return len(ideal_list)
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return the list of device names as attributes."""
+        if self.coordinator.data is None:
+            return {"devices": []}
+        
+        ideal_list = self.coordinator.data.get(self._data_key, [])
+        
+        # Get detailed device info for frontend display
+        device_details = []
+        for device_name in ideal_list:
+            # Find device config
+            device_config = next(
+                (d for d in self.coordinator.devices if d[CONF_NAME] == device_name),
+                None
+            )
+            if device_config:
+                device_details.append({
+                    "name": device_name,
+                    "power": device_config.get("power", 0),
+                    "priority": device_config.get("priority", 5),
+                    "type": device_config.get("type", "unknown"),
+                })
+        
+        return {
+            "devices": ideal_list,  # Simple list for backwards compatibility
+            "device_details": device_details,  # Detailed info for frontend
+            "total_power": sum(d["power"] for d in device_details),
+        }
+
+
 class PVOptimizerApplianceSensor(CoordinatorEntity, SensorEntity):
     """Sensor for PV Optimizer appliance."""
 
@@ -187,8 +203,6 @@ class PVOptimizerApplianceSensor(CoordinatorEntity, SensorEntity):
         elif self._data_key == ATTR_PVO_LAST_TARGET_STATE:
             return device_data.get(ATTR_PVO_LAST_TARGET_STATE, False)
         elif self._data_key == "contribution_to_budget":
-            # This solves the problem of showing each device's contribution to the total power budget
-            # when it's currently on and managed by the optimizer
             if device_data.get("is_on") and not device_data.get(ATTR_IS_LOCKED, False):
                 return device_data.get(ATTR_MEASURED_POWER_AVG, 0)
             return 0

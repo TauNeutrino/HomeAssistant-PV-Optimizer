@@ -1,83 +1,11 @@
 """
 Coordinator for PV Optimizer Integration
 
-This module contains the core optimization logic that runs periodically to
-manage device states based on available PV surplus power.
-
-Purpose:
---------
-The coordinator is the heart of the PV Optimizer. It orchestrates all
-optimization activities on a scheduled cycle, implementing the core algorithm
-that maximizes self-consumption of solar power.
-
-Architecture:
-------------
-Inherits from DataUpdateCoordinator, which provides:
-- Periodic update scheduling
-- State caching and propagation
-- Entity coordination and updates
-- Error handling and retry logic
-
-Core Optimization Algorithm (4-Step Process):
----------------------------------------------
-1. Data Aggregation:
-   - Collect current states of all devices
-   - Calculate averaged power consumption
-   - Determine device lock status
-   - Track state change timestamps
-
-2. Power Budget Calculation:
-   - Get averaged PV surplus from sensor
-   - Add power from currently running managed devices
-   - Result: Total available power for optimization
-
-3. Ideal State Calculation (Knapsack Algorithm):
-   - Process devices by priority (1 to 10)
-   - For each priority, select best device combination
-   - Maximize power utilization within budget
-   - Respect device locks
-
-4. State Synchronization:
-   - Compare ideal states with actual states
-   - Activate devices that should be ON but aren't
-   - Deactivate devices that should be OFF but aren't
-   - Skip locked devices
-
-Key Concepts:
-------------
-- Device Locking: Prevents state changes when:
-  * Min ON time not elapsed
-  * Min OFF time not elapsed
-  * Manual intervention detected (user override)
-
-- Sliding Window Averaging: Smooths power measurements over time
-  * Reduces optimization based on brief spikes/dips
-  * Configurable window size (default: 5 minutes)
-
-- Priority-Based Selection: Higher priority devices (lower numbers) selected first
-  * Priority 1: Most important (e.g., hot water)
-  * Priority 10: Least important (e.g., optional loads)
-
-- Knapsack Problem: For each priority level, select device combination that:
-  * Maximizes total power consumption
-  * Stays within available budget
-  * Respects physical constraints
-
-State Management:
-----------------
-The coordinator maintains several state dictionaries:
-- device_states: Current state cache for all devices
-- device_instances: PVDevice instances for control
-- device_state_changes: Tracks actual state change timestamps
-
-Data Flow:
----------
-1. ConfigEntry provides configuration (global + devices)
-2. Coordinator creates device instances
-3. Update cycle runs every N seconds (configurable)
-4. Each cycle fetches fresh data and executes algorithm
-5. Results propagate to sensors via coordinator.data
-6. Entities read from coordinator.data for display
+UPDATED: Added parallel simulation optimization
+- Runs separate optimization for simulation-marked devices
+- No physical control for simulation devices
+- Separate budget calculation for simulation
+- Results available via coordinator.data for frontend display
 """
 
 import asyncio
@@ -111,6 +39,7 @@ from .const import (
     CONF_MIN_ON_TIME,
     CONF_MIN_OFF_TIME,
     CONF_OPTIMIZATION_ENABLED,
+    CONF_SIMULATION_ACTIVE,  # NEW
     CONF_MEASURED_POWER_ENTITY_ID,
     CONF_POWER_THRESHOLD,
     CONF_INVERT_SWITCH,
@@ -129,48 +58,19 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
     """
     Coordinator for PV Optimizer - manages optimization cycles.
     
-    This class orchestrates the periodic optimization process, executing
-    the 4-step algorithm to maximize PV self-consumption by controlling
-    connected devices based on available surplus power.
+    UPDATED: Now runs two parallel optimizations:
+    1. Real Optimization: For devices with optimization_enabled=True
+    2. Simulation: For devices with simulation_active=True
     
-    Responsibilities:
-    ----------------
-    - Schedule periodic optimization cycles
-    - Aggregate device data (states, power, locks)
-    - Calculate available power budget
-    - Determine optimal device states
-    - Synchronize physical devices with ideal states
-    - Provide data to monitoring entities
-    
-    Inheritance:
-    -----------
-    Extends DataUpdateCoordinator which provides:
-    - Automatic scheduling via update_interval
-    - Async update framework
-    - State caching and distribution
-    - Error handling and recovery
-    - Entity coordination
+    Key Differences:
+    ---------------
+    - Real: Calculates budget from real devices, synchronizes states
+    - Simulation: Calculates separate budget, NO state synchronization
+    - Both use same knapsack algorithm for fair comparison
     """
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
-        """
-        Initialize the PV Optimizer coordinator.
-        
-        Sets up the coordinator with configuration and prepares for
-        optimization cycles. Creates device instances and initializes
-        state tracking dictionaries.
-        
-        Functionality Achieved:
-        ----------------------
-        1. Configures update interval based on user settings
-        2. Stores references to configuration
-        3. Initializes state tracking structures
-        4. Prepares for first optimization cycle
-        
-        Args:
-            hass: Home Assistant instance
-            config_entry: ConfigEntry with global config and device list
-        """
+        """Initialize the PV Optimizer coordinator."""
         super().__init__(
             hass,
             _LOGGER,
@@ -194,27 +94,59 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         self.async_set_update_interval(timedelta(seconds=self.global_config[CONF_OPTIMIZATION_CYCLE_TIME]))
 
     async def _async_update_data(self) -> Dict[str, Any]:
-        """Fetch data for the optimization cycle."""
-        # Step 1: Data Aggregation - Gather current states and data for all devices
-        # This solves the problem of needing up-to-date information on device status, power consumption, and timestamps for locking logic.
+        """
+        Fetch data for the optimization cycle.
+        
+        UPDATED: Now runs two parallel optimizations:
+        1. Real optimization (existing logic)
+        2. Simulation optimization (new logic, no state sync)
+        """
+        # Step 1: Data Aggregation - Gather current states for ALL devices
         await self._aggregate_device_data()
 
-        # Step 2: Calculate Power Budget - Determine available power for optimization
-        # This solves the problem of computing the total power available by combining PV surplus and currently managed power.
-        power_budget = await self._calculate_power_budget()
+        # ============================================
+        # REAL OPTIMIZATION (existing logic)
+        # ============================================
+        
+        # Filter devices for real optimization
+        real_devices = [d for d in self.devices if d.get(CONF_OPTIMIZATION_ENABLED, True)]
+        
+        # Calculate power budget for real optimization
+        real_power_budget = await self._calculate_power_budget(real_devices, "real")
+        
+        # Calculate ideal state for real optimization
+        real_ideal_list = await self._calculate_ideal_state(real_power_budget, real_devices)
+        
+        # Synchronize states (ONLY for real optimization)
+        await self._synchronize_states(real_ideal_list, real_devices)
 
-        # Step 3: Ideal State Calculation - Use knapsack algorithm to find optimal device states per priority
-        # This solves the problem of maximizing power utilization while respecting priority and budget constraints.
-        ideal_on_list = await self._calculate_ideal_state(power_budget)
+        # ============================================
+        # SIMULATION OPTIMIZATION (new logic)
+        # ============================================
+        
+        # Filter devices for simulation
+        sim_devices = [d for d in self.devices if d.get(CONF_SIMULATION_ACTIVE, False)]
+        
+        # Calculate power budget for simulation (separate calculation)
+        sim_power_budget = await self._calculate_power_budget(sim_devices, "simulation")
+        
+        # Calculate ideal state for simulation
+        sim_ideal_list = await self._calculate_ideal_state(sim_power_budget, sim_devices)
+        
+        # IMPORTANT: NO _synchronize_states for simulation!
+        # Simulation devices are never physically controlled
 
-        # Step 4: State Synchronization - Apply the ideal states to devices
-        # This solves the problem of ensuring devices are turned on/off according to the optimization without violating locks.
-        await self._synchronize_states(ideal_on_list)
+        # ============================================
+        # LOGGING & RETURN DATA
+        # ============================================
 
-        # Log optimization cycle results for monitoring
-        _LOGGER.info(f"Optimization cycle completed. Power budget: {power_budget:.2f}W, Ideal devices: {ideal_on_list}")
+        _LOGGER.info(
+            f"Optimization cycle completed.\n"
+            f"  Real: Budget={real_power_budget:.2f}W, Ideal devices={real_ideal_list}\n"
+            f"  Simulation: Budget={sim_power_budget:.2f}W, Ideal devices={sim_ideal_list}"
+        )
 
-        # Additional detailed logging for debugging
+        # Detailed device status logging
         device_status = []
         for device_config in self.devices:
             device_name = device_config[CONF_NAME]
@@ -224,26 +156,36 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
                 "is_on": state_info.get("is_on", False),
                 "locked": state_info.get(ATTR_IS_LOCKED, False),
                 "power": state_info.get(ATTR_MEASURED_POWER_AVG, 0),
-                "priority": device_config.get(CONF_PRIORITY, 5)
+                "priority": device_config.get(CONF_PRIORITY, 5),
+                "opt_enabled": device_config.get(CONF_OPTIMIZATION_ENABLED, True),
+                "sim_active": device_config.get(CONF_SIMULATION_ACTIVE, False),
             })
         _LOGGER.debug(f"Device status summary: {device_status}")
 
-        # Return data for sensors (e.g., power budget, surplus avg)
+        # Return data for sensors
         surplus_avg = await self._get_averaged_surplus()
         return {
-            "power_budget": power_budget,
+            # Real optimization data (existing)
+            "power_budget": real_power_budget,
             "surplus_avg": surplus_avg,
-            "ideal_on_list": ideal_on_list,
+            "ideal_on_list": real_ideal_list,
+            
+            # Simulation data (NEW)
+            "simulation_power_budget": sim_power_budget,
+            "simulation_ideal_on_list": sim_ideal_list,
         }
 
     async def _aggregate_device_data(self) -> None:
-        """Aggregate data for each device: measured_power_avg, is_locked, pvo_last_target_state."""
-        # This solves the problem of collecting all necessary device state information in one place
-        # for use in locking logic, power calculations, and state synchronization.
+        """
+        Aggregate data for each device: measured_power_avg, is_locked, pvo_last_target_state.
+        
+        NOTE: This aggregates data for ALL devices (real + simulation) since simulation
+        devices also need state tracking for realistic budget calculations.
+        """
         now = dt_util.now()
         for device_config in self.devices:
-            if not device_config.get(CONF_OPTIMIZATION_ENABLED, True):
-                continue
+            # Aggregate data for ALL devices, not just optimization_enabled
+            # This ensures simulation devices also have realistic state data
             device_name = device_config[CONF_NAME]
 
             # Create or get device instance
@@ -291,7 +233,6 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
 
     async def _get_averaged_power(self, device_config: Dict[str, Any], now: datetime) -> float:
         """Get averaged power consumption over sliding window."""
-        # This solves the problem of smoothing power measurements to avoid brief fluctuations affecting optimization.
         power_sensor = device_config.get(CONF_MEASURED_POWER_ENTITY_ID)
         if not power_sensor:
             return device_config.get(CONF_POWER, 0.0)  # Fallback to nominal power
@@ -305,7 +246,6 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
                 get_significant_states, self.hass, start_time, now, [power_sensor]
             )
             if power_sensor in history and history[power_sensor]:
-                # history[power_sensor] is a list of State objects
                 values = [float(state.state) for state in history[power_sensor] if state.state not in ['unknown', 'unavailable']]
                 return sum(values) / len(values) if values else 0.0
         except Exception as e:
@@ -317,7 +257,6 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
 
     async def _is_device_locked(self, device_config: Dict[str, Any], device: PVDevice, is_on: bool, now: datetime) -> bool:
         """Determine if a device is locked in its current state."""
-        # This solves the problem of preventing short-cycling and respecting minimum on/off times.
         device_name = device_config[CONF_NAME]
         state_info = self.device_states.get(device_name, {})
         state_changes = self.device_state_changes.get(device_name, {})
@@ -326,7 +265,6 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         if is_on:
             min_on_minutes = device_config.get(CONF_MIN_ON_TIME)
             if min_on_minutes and min_on_minutes > 0:
-                # Use actual timestamp of when device was turned on
                 last_on_time = state_changes.get("last_on_time")
                 if last_on_time:
                     time_on = (now - last_on_time).total_seconds() / 60
@@ -338,7 +276,6 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         elif not is_on:
             min_off_minutes = device_config.get(CONF_MIN_OFF_TIME)
             if min_off_minutes and min_off_minutes > 0:
-                # Use actual timestamp of when device was turned off
                 last_off_time = state_changes.get("last_off_time")
                 if last_off_time:
                     time_off = (now - last_off_time).total_seconds() / 60
@@ -349,45 +286,60 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         # Check for manual intervention
         last_target = state_info.get(ATTR_PVO_LAST_TARGET_STATE)
         if last_target is not None and last_target != is_on:
-            # Device state differs from last optimizer target - manual intervention detected
             _LOGGER.debug(f"Device {device_name} locked: manual intervention detected (target={last_target}, actual={is_on})")
             return True
 
         return False
 
-    async def _calculate_power_budget(self) -> float:
-        """Calculate the total available power budget."""
-        # This solves the problem of determining how much power is available for optimization
-        # by combining PV surplus with power from currently running managed devices.
+    async def _calculate_power_budget(self, devices: List[Dict[str, Any]], mode: str) -> float:
+        """
+        Calculate the total available power budget.
+        
+        UPDATED: Now accepts a filtered device list and mode identifier.
+        
+        Args:
+            devices: List of devices to consider (real or simulation)
+            mode: "real" or "simulation" for logging purposes
+        
+        Budget Calculation (Answer to Question 1: Option A):
+        ----------------------------------------------------
+        - Real: PV surplus + power from running real optimization devices
+        - Simulation: PV surplus + power from running simulation devices
+        - Separate budgets ensure clean separation between real and simulation
+        """
         surplus_avg = await self._get_averaged_surplus()
 
         running_manageable_power = 0.0
-        for device_config in self.devices:
-            if not device_config.get(CONF_OPTIMIZATION_ENABLED, True):
-                continue
+        for device_config in devices:
             device_name = device_config[CONF_NAME]
             state_info = self.device_states.get(device_name, {})
+            
+            # Only count devices that are:
+            # 1. Currently ON
+            # 2. Not locked (manageable)
             if state_info.get("is_on") and not state_info.get(ATTR_IS_LOCKED, False):
-                # Use measured power if available, otherwise nominal
                 power = state_info.get(ATTR_MEASURED_POWER_AVG, device_config.get(CONF_POWER, 0.0))
                 running_manageable_power += power
 
         budget = surplus_avg + running_manageable_power
-        _LOGGER.debug(f"Calculated power budget: {surplus_avg:.2f}W surplus + {running_manageable_power:.2f}W running = {budget:.2f}W")
+        _LOGGER.debug(
+            f"Calculated {mode} power budget: {surplus_avg:.2f}W surplus + "
+            f"{running_manageable_power:.2f}W running = {budget:.2f}W"
+        )
         return budget
 
-    async def _calculate_ideal_state(self, power_budget: float) -> List[str]:
-        """Calculate the ideal list of devices to turn on using knapsack per priority."""
-        # This solves the problem of selecting the optimal combination of devices to maximize power utilization
-        # while respecting priority levels and available budget.
+    async def _calculate_ideal_state(self, power_budget: float, devices: List[Dict[str, Any]]) -> List[str]:
+        """
+        Calculate the ideal list of devices to turn on using knapsack per priority.
+        
+        UPDATED: Now accepts a filtered device list (real or simulation).
+        """
         ideal_on_list = []
         remaining_budget = power_budget
 
         # Group devices by priority
         devices_by_priority = {}
-        for device_config in self.devices:
-            if not device_config.get(CONF_OPTIMIZATION_ENABLED, True):
-                continue
+        for device_config in devices:
             priority = device_config[CONF_PRIORITY]
             if priority not in devices_by_priority:
                 devices_by_priority[priority] = []
@@ -410,8 +362,6 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
 
     def _knapsack_select(self, devices: List[Dict], budget: float) -> List[str]:
         """Select subset of devices that maximize power without exceeding budget."""
-        # This solves the knapsack problem for each priority level by greedily selecting
-        # the highest power devices that fit within the budget and are not locked.
         available_devices = [
             d for d in devices
             if not self.device_states.get(d[CONF_NAME], {}).get(ATTR_IS_LOCKED, False)
@@ -429,11 +379,14 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
 
         return selected
 
-    async def _synchronize_states(self, ideal_on_list: List[str]) -> None:
-        """Turn devices on/off based on ideal list."""
-        # This solves the problem of applying the calculated optimal state to physical devices
-        # while respecting locks and updating tracking information.
-        for device_config in self.devices:
+    async def _synchronize_states(self, ideal_on_list: List[str], devices: List[Dict[str, Any]]) -> None:
+        """
+        Turn devices on/off based on ideal list.
+        
+        UPDATED: Now accepts a device list to only sync specified devices.
+        This ensures simulation devices are never physically controlled.
+        """
+        for device_config in devices:
             device_name = device_config[CONF_NAME]
             device = self.device_instances.get(device_name)
             if device is None:
@@ -460,8 +413,6 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
 
     async def _get_averaged_surplus(self) -> float:
         """Get averaged PV surplus over sliding window."""
-        # This solves the problem of smoothing surplus readings to avoid optimization
-        # decisions based on brief fluctuations.
         surplus_entity = self.global_config[CONF_SURPLUS_SENSOR_ENTITY_ID]
         invert_value = self.global_config.get(CONF_INVERT_SURPLUS_VALUE, False)
         window_minutes = self.global_config[CONF_SLIDING_WINDOW_SIZE]
@@ -474,7 +425,6 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
                 get_significant_states, self.hass, start_time, now, [surplus_entity]
             )
             if surplus_entity in history and history[surplus_entity]:
-                # history[surplus_entity] is a list of State objects
                 values = [float(state.state) for state in history[surplus_entity] if state.state not in ['unknown', 'unavailable']]
                 avg = sum(values) / len(values) if values else 0.0
                 # Apply inversion if configured

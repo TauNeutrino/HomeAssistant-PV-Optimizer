@@ -1,72 +1,10 @@
 """
 Switch Entities for PV Optimizer Integration
 
-This module creates switch entities that allow users to:
-1. Manually control switch-type devices
-2. Enable/disable optimization per device
-
-Purpose:
---------
-Provide interactive on/off controls for both device operation and
-optimization control through Home Assistant's native switch interface.
-
-Entity Types Created:
---------------------
-1. Device Control Switches (PVOptimizerSwitch):
-   - For switch-type devices only
-   - Mirrors the actual device switch state
-   - Allows manual override (creates manual intervention lock)
-   - Respects invert logic if configured
-   - Example: Manually turn water heater on/off
-
-2. Optimization Control Switches (PVOptimizerOptimizationSwitch):
-   - Created for ALL devices (switch and numeric types)
-   - Master enable/disable for optimization
-   - When OFF: Coordinator ignores device during optimization
-   - When ON: Device participates in optimization cycles
-   - Changes persist to config entry immediately
-   - No reload required
-
-Architecture:
-------------
-All switch entities extend CoordinatorEntity to:
-- Receive updates when coordinator refreshes
-- Link to parent device in device registry
-- Maintain consistent state across entities
-
-Manual Override Detection:
--------------------------
-When user manually toggles a device switch:
-1. Device state changes
-2. Coordinator detects mismatch between actual and target state
-3. Device becomes locked (manual intervention)
-4. Optimizer respects lock and won't change state
-5. Lock persists until device state matches optimizer's intended state
-
-This solves the problem of respecting user overrides during optimization.
-
-Dynamic Configuration Pattern:
------------------------------
-The optimization enable/disable switch demonstrates dynamic configuration:
-
-Flow:
-1. User toggles optimization switch
-2. async_turn_on/off() called
-3. Value updated in coordinator.devices list
-4. Config entry updated with new data
-5. Next cycle respects new setting
-6. No integration reload required
-
-Benefits:
-- Immediate control
-- No service interruption
-- Per-device granularity
-- Easy temporary exclusion
-
-Device Linking:
---------------
-All entities include device_info to link them to their parent device,
-enabling proper organization in the device UI.
+UPDATED: Added simulation_active switch for all devices
+- Allows marking devices for simulation without real control
+- Independent from optimization_enabled (can have both active)
+- Backward compatible: defaults to False for existing devices
 """
 
 import logging
@@ -86,6 +24,7 @@ from .const import (
     CONF_INVERT_SWITCH,
     TYPE_SWITCH,
     CONF_OPTIMIZATION_ENABLED,
+    CONF_SIMULATION_ACTIVE,  # NEW
     normalize_device_name,
 )
 from .coordinator import PVOptimizerCoordinator
@@ -103,7 +42,7 @@ async def async_setup_entry(
 
     entities = []
 
-    # Create switches for switch-type devices
+    # Create switches for switch-type devices (manual control)
     for device in coordinator.devices:
         if device[CONF_TYPE] == TYPE_SWITCH:
             entities.append(PVOptimizerSwitch(coordinator, device))
@@ -113,11 +52,16 @@ async def async_setup_entry(
         device_name = device[CONF_NAME]
         entities.append(PVOptimizerOptimizationSwitch(coordinator, device_name))
 
+    # Create simulation active switches for all devices - NEW
+    for device in coordinator.devices:
+        device_name = device[CONF_NAME]
+        entities.append(PVOptimizerSimulationSwitch(coordinator, device_name))
+
     async_add_entities(entities)
 
 
 class PVOptimizerSwitch(CoordinatorEntity, SwitchEntity):
-    """Switch for PV Optimizer appliance."""
+    """Switch for PV Optimizer appliance manual control."""
 
     def __init__(self, coordinator: PVOptimizerCoordinator, device: Dict[str, Any]) -> None:
         """Initialize the switch."""
@@ -153,8 +97,6 @@ class PVOptimizerSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
-        # This is for manual control; the coordinator handles optimization
-        # But we can allow manual override
         target_state = "off" if self._invert else "on"
         await self.hass.services.async_call(
             "switch", "turn_on" if target_state == "on" else "turn_off",
@@ -198,8 +140,6 @@ class PVOptimizerOptimizationSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return true if optimization is enabled for this device."""
-        # This solves the problem of allowing dynamic configuration of optimization enabled/disabled
-        # by reading from the device config stored in the coordinator
         for device in self.coordinator.devices:
             if device[CONF_NAME] == self._device_name:
                 return device.get(CONF_OPTIMIZATION_ENABLED, True)
@@ -207,8 +147,6 @@ class PVOptimizerOptimizationSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Enable optimization for this device."""
-        # This solves the problem of dynamically updating device configuration
-        # by modifying the config stored in the coordinator and config entry
         for i, device in enumerate(self.coordinator.devices):
             if device[CONF_NAME] == self._device_name:
                 self.coordinator.devices[i][CONF_OPTIMIZATION_ENABLED] = True
@@ -221,7 +159,6 @@ class PVOptimizerOptimizationSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Disable optimization for this device."""
-        # This solves the problem of dynamically disabling optimization for a device
         for i, device in enumerate(self.coordinator.devices):
             if device[CONF_NAME] == self._device_name:
                 self.coordinator.devices[i][CONF_OPTIMIZATION_ENABLED] = False
@@ -230,4 +167,86 @@ class PVOptimizerOptimizationSwitch(CoordinatorEntity, SwitchEntity):
                 config_data["devices"] = self.coordinator.devices
                 self.hass.config_entries.async_update_entry(self.coordinator.config_entry, data=config_data)
                 _LOGGER.info(f"Disabled optimization for device: {self._device_name}")
+                break
+
+
+class PVOptimizerSimulationSwitch(CoordinatorEntity, SwitchEntity):
+    """
+    Switch for enabling/disabling simulation mode for a device - NEW.
+    
+    Purpose:
+    -------
+    Allows marking devices for simulation without actual control.
+    When enabled, device participates in simulation calculations but
+    is not physically controlled by the optimizer.
+    
+    Use Cases:
+    ---------
+    - Testing device configurations before real deployment
+    - "What-if" scenarios (e.g., "What if I add a washing machine?")
+    - Comparing simulation results with real optimization
+    
+    Behavior:
+    --------
+    - Independent from optimization_enabled (both can be active)
+    - Device can be in both real and simulation optimization simultaneously
+    - Simulation never triggers physical device control
+    - Default: False (backward compatibility)
+    """
+
+    def __init__(self, coordinator: PVOptimizerCoordinator, device_name: str) -> None:
+        """Initialize the simulation switch."""
+        super().__init__(coordinator)
+        self._device_name = device_name
+        self._attr_name = f"PVO {device_name} Simulation Active"
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_simulation_active"
+        self._attr_entity_registry_enabled_default = True
+        self._attr_icon = "mdi:test-tube"  # Different icon to distinguish from optimization
+        
+        # Get device type for model
+        device_type = "Unknown"
+        for device in coordinator.devices:
+            if device[CONF_NAME] == device_name:
+                device_type = device.get("type", "Unknown")
+                break
+        normalized_name = normalize_device_name(device_name)
+        
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
+            "name": f"PVO {device_name}",
+            "manufacturer": "PV Optimizer",
+            "model": f"{device_type.capitalize()} Device",
+        }
+
+    @property
+    def is_on(self) -> bool:
+        """Return true if simulation is active for this device."""
+        for device in self.coordinator.devices:
+            if device[CONF_NAME] == self._device_name:
+                # Default to False for backward compatibility with existing devices
+                return device.get(CONF_SIMULATION_ACTIVE, False)
+        return False
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Enable simulation for this device."""
+        for i, device in enumerate(self.coordinator.devices):
+            if device[CONF_NAME] == self._device_name:
+                self.coordinator.devices[i][CONF_SIMULATION_ACTIVE] = True
+                # Update config entry data
+                config_data = dict(self.coordinator.config_entry.data)
+                config_data["devices"] = self.coordinator.devices
+                self.hass.config_entries.async_update_entry(self.coordinator.config_entry, data=config_data)
+                _LOGGER.info(f"Enabled simulation for device: {self._device_name}")
+                break
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Disable simulation for this device."""
+        for i, device in enumerate(self.coordinator.devices):
+            if device[CONF_NAME] == self._device_name:
+                self.coordinator.devices[i][CONF_SIMULATION_ACTIVE] = False
+                # Update config entry data
+                config_data = dict(self.coordinator.config_entry.data)
+                config_data["devices"] = self.coordinator.devices
+                self.hass.config_entries.async_update_entry(self.coordinator.config_entry, data=config_data)
+                _LOGGER.info(f"Disabled simulation for device: {self._device_name}")
                 break

@@ -1,63 +1,9 @@
 """
 Config Flow for PV Optimizer Integration
 
-This module implements the configuration flow for the PV Optimizer integration,
-providing a user-friendly interface for initial setup and ongoing management.
-
-Purpose:
---------
-Enable users to configure the integration without editing YAML files, using
-Home Assistant's native config flow UI with proper validation and user feedback.
-
-Architecture:
-------------
-1. Initial Setup (Config Flow):
-   - Triggered when user adds integration
-   - Configures global parameters only
-   - Creates config entry
-
-2. Ongoing Management (Options Flow):
-   - Menu-based navigation
-   - Global configuration editing
-   - Device management (add/edit/delete)
-   - Numeric targets configuration
-
-Flow Structure:
---------------
-Config Flow (Initial Setup):
-  └── async_step_user: Configure global parameters
-
-Options Flow (Ongoing Management):
-  ├── async_step_init: Main menu
-  │    ├── global_config: Edit global settings
-  │    └── manage_devices: Device management menu
-  │         ├── device_list: View/edit/delete devices
-  │         ├── add_switch_device: Add switch-type device
-  │         ├── add_numeric_device: Add numeric-type device
-  │         │    └── numeric_targets: Configure up to 5 targets
-  │         ├── edit_device: Edit existing device
-  │         │    └── numeric_targets (if numeric type)
-  │         └── confirm_delete: Confirm device deletion
-
-Key Features:
-------------
-- Native HA forms with validation
-- Entity pickers with autocomplete
-- Domain filtering (only relevant entities shown)
-- Duplicate name detection
-- Pre-filled forms for editing
-- Confirmation dialogs for destructive actions
-- Dynamic schema based on device type
-- Support for up to 5 numeric targets per device
-
-Design Principles:
------------------
-- No YAML editing required
-- Clear, guided steps
-- Immediate validation feedback
-- Automatic reload on changes
-- Preserves existing configuration
-- Full translation support (EN/DE)
+UPDATED: Added simulation_active option for devices
+- Backward compatible: defaults to False for existing devices
+- Can be enabled independently from optimization_enabled
 """
 
 import logging
@@ -88,6 +34,7 @@ from .const import (
     CONF_MIN_ON_TIME,
     CONF_MIN_OFF_TIME,
     CONF_OPTIMIZATION_ENABLED,
+    CONF_SIMULATION_ACTIVE,  # NEW
     CONF_MEASURED_POWER_ENTITY_ID,
     CONF_POWER_THRESHOLD,
     CONF_INVERT_SWITCH,
@@ -99,81 +46,13 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """
-    Handle a config flow for PV Optimizer (initial setup).
-    
-    This class manages the initial configuration when the user first adds
-    the PV Optimizer integration through the UI.
-    
-    Flow:
-    -----
-    1. User navigates to Settings → Devices & Services → Add Integration
-    2. Searches for "PV Optimizer"
-    3. Completes the global configuration form
-    4. Integration is added with empty device list
-    5. User can then add devices via options flow
-    
-    Functionality Achieved:
-    ----------------------
-    - Collects global configuration parameters
-    - Validates surplus sensor entity exists
-    - Creates config entry with global config and empty device list
-    - Provides foundation for device management via options flow
-    """
+    """Handle a config flow for PV Optimizer (initial setup)."""
 
     VERSION = 1
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
     async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """
-        Handle the initial setup step - configure global parameters only.
-        
-        This is the entry point for the config flow, shown when the user first
-        adds the integration. It collects only global configuration; device
-        management is handled through the options flow.
-        
-        Functionality Achieved:
-        ----------------------
-        1. Displays form for global configuration
-        2. Validates user input
-        3. Creates config entry with:
-           - global: Global configuration dict
-           - devices: Empty list (devices added later via options flow)
-        
-        Form Fields:
-        -----------
-        - surplus_sensor_entity_id: Power sensor (required)
-          * Domain filter: sensor
-          * Device class: power
-          * Example: sensor.grid_power
-        
-        - invert_surplus_value: Boolean flag (optional, default: False)
-          * Use when sensor sign is opposite convention
-          * True = multiply value by -1
-        
-        - sliding_window_size: Time window in minutes (required, default: 5)
-          * Range: 1-60 minutes
-          * Used for power averaging
-          * Smooths out brief fluctuations
-        
-        - optimization_cycle_time: Cycle frequency in seconds (required, default: 60)
-          * Range: 10-300 seconds
-          * How often optimization runs
-          * Lower = more responsive but higher CPU
-        
-        Why Global Config Only:
-        -----------------------
-        - Simplifies initial setup (get started quickly)
-        - Device configuration is complex (multiple steps for numeric devices)
-        - Options flow provides better UX for device management
-        - Allows testing integration before adding devices
-        
-        Args:
-            user_input: Form data when submitted, None for initial display
-        
-        Returns:
-            FlowResult: Either show form or create config entry
-        """
+        """Handle the initial setup step - configure global parameters only."""
         if user_input is not None:
             # Create the config entry with only global config
             return self.async_create_entry(
@@ -359,6 +238,7 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
                     CONF_SWITCH_ENTITY_ID: user_input[CONF_SWITCH_ENTITY_ID],
                     CONF_INVERT_SWITCH: user_input.get(CONF_INVERT_SWITCH, False),
                     CONF_OPTIMIZATION_ENABLED: user_input.get(CONF_OPTIMIZATION_ENABLED, True),
+                    CONF_SIMULATION_ACTIVE: user_input.get(CONF_SIMULATION_ACTIVE, False),  # NEW
                     CONF_MEASURED_POWER_ENTITY_ID: user_input.get(CONF_MEASURED_POWER_ENTITY_ID),
                     CONF_POWER_THRESHOLD: user_input.get(CONF_POWER_THRESHOLD, 100),
                     CONF_MIN_ON_TIME: user_input.get(CONF_MIN_ON_TIME, 0),
@@ -403,6 +283,7 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
             ),
             vol.Optional(CONF_INVERT_SWITCH, default=False): selector.BooleanSelector(),
             vol.Optional(CONF_OPTIMIZATION_ENABLED, default=True): selector.BooleanSelector(),
+            vol.Optional(CONF_SIMULATION_ACTIVE, default=False): selector.BooleanSelector(),  # NEW
             vol.Optional(CONF_MEASURED_POWER_ENTITY_ID): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor", device_class="power"),
             ),
@@ -456,6 +337,7 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
                     CONF_PRIORITY: user_input[CONF_PRIORITY],
                     CONF_POWER: user_input[CONF_POWER],
                     CONF_OPTIMIZATION_ENABLED: user_input.get(CONF_OPTIMIZATION_ENABLED, True),
+                    CONF_SIMULATION_ACTIVE: user_input.get(CONF_SIMULATION_ACTIVE, False),  # NEW
                     CONF_MEASURED_POWER_ENTITY_ID: user_input.get(CONF_MEASURED_POWER_ENTITY_ID),
                     CONF_POWER_THRESHOLD: user_input.get(CONF_POWER_THRESHOLD, 100),
                     CONF_MIN_ON_TIME: user_input.get(CONF_MIN_ON_TIME, 0),
@@ -478,6 +360,7 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
                 ),
             ),
             vol.Optional(CONF_OPTIMIZATION_ENABLED, default=True): selector.BooleanSelector(),
+            vol.Optional(CONF_SIMULATION_ACTIVE, default=False): selector.BooleanSelector(),  # NEW
             vol.Optional(CONF_MEASURED_POWER_ENTITY_ID): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor", device_class="power"),
             ),
@@ -597,6 +480,7 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
                 CONF_PRIORITY: user_input[CONF_PRIORITY],
                 CONF_POWER: user_input[CONF_POWER],
                 CONF_OPTIMIZATION_ENABLED: user_input.get(CONF_OPTIMIZATION_ENABLED, True),
+                CONF_SIMULATION_ACTIVE: user_input.get(CONF_SIMULATION_ACTIVE, False),  # NEW
                 CONF_MEASURED_POWER_ENTITY_ID: user_input.get(CONF_MEASURED_POWER_ENTITY_ID),
                 CONF_POWER_THRESHOLD: user_input.get(CONF_POWER_THRESHOLD, 100),
                 CONF_MIN_ON_TIME: user_input.get(CONF_MIN_ON_TIME, 0),
@@ -648,6 +532,10 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
             vol.Optional(
                 CONF_OPTIMIZATION_ENABLED, 
                 default=device_to_edit.get(CONF_OPTIMIZATION_ENABLED, True)
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_SIMULATION_ACTIVE,
+                default=device_to_edit.get(CONF_SIMULATION_ACTIVE, False)  # NEW - default to False for backward compat
             ): selector.BooleanSelector(),
         }
 

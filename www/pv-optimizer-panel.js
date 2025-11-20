@@ -5,6 +5,14 @@ import {
   css,
 } from "https://unpkg.com/lit-element@2.4.0/lit-element.js?module";
 
+/**
+ * PV Optimizer Panel with Simulation Support
+ * 
+ * UPDATED: Added simulation results display
+ * - Shows real optimization results
+ * - Shows simulation results
+ * - Toggle between separate view and comparison table
+ */
 class PvOptimizerPanel extends LitElement {
   static get properties() {
     return {
@@ -13,6 +21,7 @@ class PvOptimizerPanel extends LitElement {
       _config: { type: Object, state: true },
       _loading: { type: Boolean, state: true },
       _error: { type: String, state: true },
+      _showComparison: { type: Boolean, state: true },  // NEW: Toggle for comparison view
     };
   }
 
@@ -22,6 +31,7 @@ class PvOptimizerPanel extends LitElement {
     this._loading = true;
     this._error = null;
     this._refreshInterval = null;
+    this._showComparison = false;  // Start with separate cards view
   }
 
   connectedCallback() {
@@ -85,6 +95,33 @@ class PvOptimizerPanel extends LitElement {
       "/config/integrations/integration/pv_optimizer"
     );
     window.dispatchEvent(new Event("location-changed"));
+  }
+
+  _toggleComparison() {
+    this._showComparison = !this._showComparison;
+  }
+
+  /**
+   * Get ideal device list from Home Assistant state
+   * NEW: Helper to fetch sensor data
+   */
+  _getIdealDevices(sensorName) {
+    if (!this.hass) return [];
+    
+    const entity = this.hass.states[`sensor.pv_optimizer_${sensorName}`];
+    if (!entity) return [];
+    
+    return entity.attributes.device_details || [];
+  }
+
+  _getPowerBudget(key) {
+    if (!this.hass) return 0;
+    
+    const sensorName = key === 'real' ? 'power_budget' : 'simulation_power_budget';
+    const entity = this.hass.states[`sensor.pv_optimizer_${sensorName}`];
+    if (!entity) return 0;
+    
+    return parseFloat(entity.state) || 0;
   }
 
   _renderStatusCard() {
@@ -178,23 +215,168 @@ class PvOptimizerPanel extends LitElement {
     `;
   }
 
+  /**
+   * NEW: Render ideal devices list (real or simulation)
+   */
+  _renderIdealDevicesCard(title, sensorKey, icon, color) {
+    const devices = this._getIdealDevices(sensorKey);
+    const budget = this._getPowerBudget(sensorKey === 'real_ideal_devices' ? 'real' : 'simulation');
+    const totalPower = devices.reduce((sum, d) => sum + (d.power || 0), 0);
+
+    return html`
+      <ha-card outlined>
+        <h1 class="card-header" style="border-left: 4px solid ${color};">
+          <ha-icon .icon=${icon} style="color: ${color}; margin-right: 8px;"></ha-icon>
+          ${title}
+        </h1>
+        <div class="card-content">
+          ${devices.length === 0
+            ? html`
+                <div class="empty-state">
+                  <div style="font-size: 32px; margin-bottom: 12px;">📊</div>
+                  <div>No devices in ideal ${title.toLowerCase()} state</div>
+                </div>
+              `
+            : html`
+                <div class="ideal-summary">
+                  <div class="summary-item">
+                    <div class="summary-label">Devices Active</div>
+                    <div class="summary-value">${devices.length}</div>
+                  </div>
+                  <div class="summary-item">
+                    <div class="summary-label">Total Power</div>
+                    <div class="summary-value">${totalPower.toFixed(0)}W</div>
+                  </div>
+                  <div class="summary-item">
+                    <div class="summary-label">Budget Available</div>
+                    <div class="summary-value">${budget.toFixed(0)}W</div>
+                  </div>
+                  <div class="summary-item">
+                    <div class="summary-label">Budget Used</div>
+                    <div class="summary-value">${((totalPower / budget) * 100).toFixed(0)}%</div>
+                  </div>
+                </div>
+                
+                <div class="device-list">
+                  ${devices.map((device) => this._renderIdealDeviceRow(device))}
+                </div>
+              `}
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _renderIdealDeviceRow(device) {
+    return html`
+      <div class="ideal-device-row">
+        <div class="device-info">
+          <div class="device-name">✅ ${device.name}</div>
+          <div class="device-meta">
+            Priority ${device.priority} • ${device.type}
+          </div>
+        </div>
+        <div class="device-power">⚡ ${device.power}W</div>
+      </div>
+    `;
+  }
+
+  /**
+   * NEW: Render comparison table
+   */
+  _renderComparisonTable() {
+    const realDevices = this._getIdealDevices('real_ideal_devices');
+    const simDevices = this._getIdealDevices('simulation_ideal_devices');
+    
+    // Get all unique device names
+    const allDeviceNames = new Set([
+      ...realDevices.map(d => d.name),
+      ...simDevices.map(d => d.name)
+    ]);
+
+    const realBudget = this._getPowerBudget('real');
+    const simBudget = this._getPowerBudget('simulation');
+
+    return html`
+      <ha-card outlined>
+        <h1 class="card-header">
+          <ha-icon .icon=${"mdi:table-compare"} style="margin-right: 8px;"></ha-icon>
+          Real vs Simulation Comparison
+        </h1>
+        <div class="card-content">
+          <div class="comparison-summary">
+            <div class="comparison-col">
+              <div class="comparison-title">Real Optimization</div>
+              <div class="comparison-stat">
+                ${realDevices.length} devices | 
+                ${realDevices.reduce((s, d) => s + d.power, 0)}W / ${realBudget.toFixed(0)}W
+              </div>
+            </div>
+            <div class="comparison-col">
+              <div class="comparison-title">Simulation</div>
+              <div class="comparison-stat">
+                ${simDevices.length} devices | 
+                ${simDevices.reduce((s, d) => s + d.power, 0)}W / ${simBudget.toFixed(0)}W
+              </div>
+            </div>
+          </div>
+
+          <table class="comparison-table">
+            <thead>
+              <tr>
+                <th>Device</th>
+                <th>Power</th>
+                <th>Real</th>
+                <th>Simulation</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${Array.from(allDeviceNames).map(name => {
+                const realDevice = realDevices.find(d => d.name === name);
+                const simDevice = simDevices.find(d => d.name === name);
+                const inReal = !!realDevice;
+                const inSim = !!simDevice;
+                const power = (realDevice || simDevice)?.power || 0;
+
+                return html`
+                  <tr>
+                    <td class="device-name-col">${name}</td>
+                    <td>${power}W</td>
+                    <td class="status-col">
+                      ${inReal ? html`<span class="status-badge active">✅ Active</span>` : html`<span class="status-badge inactive">⭕ Inactive</span>`}
+                    </td>
+                    <td class="status-col">
+                      ${inSim ? html`<span class="status-badge active">✅ Active</span>` : html`<span class="status-badge inactive">⭕ Inactive</span>`}
+                    </td>
+                  </tr>
+                `;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </ha-card>
+    `;
+  }
+
   _renderDeviceCard(deviceData) {
     const device = deviceData.config;
     const state = deviceData.state || {};
 
     const statusIcon = device.optimization_enabled ? "🟢" : "🔴";
+    const simIcon = device.simulation_active ? "🧪" : "";
     const statusText = state.is_on ? "✅ ON" : "⭕ OFF";
     const lockIcon = state.is_locked ? "🔒" : "🔓";
 
     return html`
       <div class="device-card">
-        <div class="device-name">${statusIcon} ${device.name}</div>
+        <div class="device-name">${statusIcon} ${simIcon} ${device.name}</div>
         <div class="device-details">
           <div><strong>Type:</strong> ${device.type}</div>
           <div><strong>Priority:</strong> ${device.priority}</div>
           <div><strong>Power:</strong> ${device.power}W</div>
           <div><strong>Status:</strong> ${statusText}</div>
           <div><strong>Locked:</strong> ${lockIcon} ${state.is_locked ? "Yes" : "No"}</div>
+          ${device.optimization_enabled ? html`<div><strong>Real Opt:</strong> ✅ Enabled</div>` : ''}
+          ${device.simulation_active ? html`<div><strong>Simulation:</strong> 🧪 Active</div>` : ''}
           ${state.measured_power_avg
             ? html`
                 <div>
@@ -251,6 +433,36 @@ class PvOptimizerPanel extends LitElement {
     return html`
       ${this._renderStatusCard()} 
       ${this._renderGlobalConfigCard()}
+      
+      <!-- NEW: Toggle button for comparison view -->
+      <div class="toggle-container">
+        <ha-button @click=${this._toggleComparison}>
+          <ha-icon 
+            slot="icon" 
+            .icon=${this._showComparison ? "mdi:view-split-vertical" : "mdi:table-compare"}
+          ></ha-icon>
+          ${this._showComparison ? "Show Separate Cards" : "Show Comparison Table"}
+        </ha-button>
+      </div>
+
+      <!-- NEW: Conditional rendering based on view mode -->
+      ${this._showComparison
+        ? html`${this._renderComparisonTable()}`
+        : html`
+            ${this._renderIdealDevicesCard(
+              "Real Optimization",
+              "real_ideal_devices",
+              "mdi:lightning-bolt",
+              "var(--success-color, #4caf50)"
+            )}
+            ${this._renderIdealDevicesCard(
+              "Simulation",
+              "simulation_ideal_devices",
+              "mdi:test-tube",
+              "var(--info-color, #2196f3)"
+            )}
+          `}
+
       ${this._renderDevicesCard()}
     `;
   }
@@ -295,6 +507,11 @@ class PvOptimizerPanel extends LitElement {
         padding: 16px 0;
       }
 
+      .toggle-container {
+        text-align: center;
+        margin: 0 16px;
+      }
+
       .config-group {
         margin-bottom: 16px;
       }
@@ -318,6 +535,137 @@ class PvOptimizerPanel extends LitElement {
         font-size: 13px;
       }
 
+      /* NEW: Ideal devices card styles */
+      .ideal-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+        padding: 16px;
+        background-color: var(--secondary-background-color);
+        border-radius: 8px;
+      }
+
+      .summary-item {
+        text-align: center;
+      }
+
+      .summary-label {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        margin-bottom: 4px;
+      }
+
+      .summary-value {
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--primary-text-color);
+      }
+
+      .ideal-device-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px;
+        margin-bottom: 8px;
+        background-color: var(--secondary-background-color);
+        border-radius: 4px;
+        border-left: 3px solid var(--primary-color);
+      }
+
+      .device-info {
+        flex: 1;
+      }
+
+      .device-name {
+        font-weight: 500;
+        margin-bottom: 4px;
+      }
+
+      .device-meta {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+      }
+
+      .device-power {
+        font-weight: 600;
+        font-size: 16px;
+        color: var(--primary-color);
+      }
+
+      /* NEW: Comparison table styles */
+      .comparison-summary {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 16px;
+        padding: 16px;
+        background-color: var(--secondary-background-color);
+        border-radius: 8px;
+      }
+
+      .comparison-col {
+        text-align: center;
+      }
+
+      .comparison-title {
+        font-weight: 600;
+        margin-bottom: 8px;
+        font-size: 16px;
+      }
+
+      .comparison-stat {
+        font-size: 14px;
+        color: var(--secondary-text-color);
+      }
+
+      .comparison-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      .comparison-table thead {
+        background-color: var(--secondary-background-color);
+      }
+
+      .comparison-table th {
+        padding: 12px;
+        text-align: left;
+        font-weight: 600;
+        border-bottom: 2px solid var(--divider-color);
+      }
+
+      .comparison-table td {
+        padding: 12px;
+        border-bottom: 1px solid var(--divider-color);
+      }
+
+      .device-name-col {
+        font-weight: 500;
+      }
+
+      .status-col {
+        text-align: center;
+      }
+
+      .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .status-badge.active {
+        background-color: rgba(76, 175, 80, 0.2);
+        color: var(--success-color, #4caf50);
+      }
+
+      .status-badge.inactive {
+        background-color: rgba(158, 158, 158, 0.2);
+        color: var(--secondary-text-color);
+      }
+
       .device-list {
         display: grid;
         gap: 12px;
@@ -328,12 +676,6 @@ class PvOptimizerPanel extends LitElement {
         border-left: 4px solid var(--primary-color);
         border-radius: 8px;
         padding: 16px;
-      }
-
-      .device-name {
-        font-size: 16px;
-        font-weight: 500;
-        margin-bottom: 8px;
       }
 
       .device-details {
@@ -376,6 +718,23 @@ class PvOptimizerPanel extends LitElement {
 
         .device-details {
           grid-template-columns: 1fr;
+        }
+
+        .ideal-summary {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .comparison-summary {
+          grid-template-columns: 1fr;
+        }
+
+        .comparison-table {
+          font-size: 12px;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+          padding: 8px 4px;
         }
       }
     `;

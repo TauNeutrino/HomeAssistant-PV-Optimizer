@@ -1,4 +1,3 @@
-
 """
 Constants for PV Optimizer Integration
 
@@ -13,11 +12,6 @@ Organization:
 4. Device Configuration Keys: Per-device settings
 5. Device Types: Types of controllable devices
 6. Attributes: Custom attributes added to entities
-
-Purpose:
---------
-Centralizing constants ensures consistency across the codebase and makes it easy
-to update configuration keys or add new settings in one location.
 """
 
 import re
@@ -167,6 +161,14 @@ CONF_MIN_OFF_TIME = "min_off_time"  # Minimum minutes device must stay OFF
 # Optimization Control
 # Master switch to enable/disable optimization for this device
 CONF_OPTIMIZATION_ENABLED = "optimization_enabled"
+
+# Simulation Control (NEW)
+# Boolean flag to mark device for simulation mode
+# When True: Device participates in simulation calculations but is NOT physically controlled
+# When False: Device only participates in real optimization (if optimization_enabled)
+# Both can be True simultaneously for testing/comparison scenarios
+# Default: False (backward compatibility)
+CONF_SIMULATION_ACTIVE = "simulation_active"
 
 # Power Measurement
 # Optional sensor for measuring actual device power consumption
