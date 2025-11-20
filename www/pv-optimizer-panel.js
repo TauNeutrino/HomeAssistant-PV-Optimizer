@@ -113,56 +113,52 @@ class PvOptimizerPanel extends LitElement {
     window.dispatchEvent(new Event("location-changed"));
   }
 
-  _renderStatusCard() {
+  _renderHeader() {
     const ready = !this._loading && !this._error && this._config;
 
     return html`
+      <div class="name">PV Optimizer</div>
+      <div class="header-right">
+        <ha-button
+          appearance="filled"
+          @click=${this._openConfiguration}
+        >
+          <ha-icon slot="icon" .icon=${"mdi:cog"}></ha-icon>
+          Open Configuration
+        </ha-button>
+        ${ready
+          ? html`
+              <ha-icon
+                class="icon"
+                .icon=${"mdi:check-circle-outline"}
+                style="color: var(--success-color, green);"
+              ></ha-icon>
+            `
+          : html`
+              <ha-icon
+                class="icon"
+                .icon=${"mdi:alert-circle-outline"}
+                style="color: var(--error-color, red);"
+              ></ha-icon>
+            `}
+        </div>
+    `;
+  }
+
+  _renderErrorCard() {
+    return html`
       <ha-card outlined>
-        <h1 class="card-header">
-          <div class="name">PV Optimizer</div>
-          <ha-button
-            appearance="filled"
-            @click=${this._openConfiguration}
-          >
-            <ha-icon slot="icon" .icon=${"mdi:cog"}></ha-icon>
-            Open Configuration
-          </ha-button>
-          ${ready
-            ? html`
-                <ha-icon
-                  class="icon"
-                  .icon=${"mdi:check-circle-outline"}
-                  style="color: var(--success-color, green);"
-                ></ha-icon>
-              `
-            : html`
-                <ha-icon
-                  class="icon"
-                  .icon=${"mdi:alert-circle-outline"}
-                  style="color: var(--error-color, red);"
-                ></ha-icon>
-              `}
-        </h1>
         <div class="card-content">
-          ${this._error
-            ? html`
-                <ha-alert alert-type="error">
-                  ${this._error}
-                  <ha-button
-                    slot="action"
-                    appearance="plain"
-                    @click=${() => this._fetchConfig()}
-                  >
-                    Retry
-                  </ha-button>
-                </ha-alert>
-              `
-            : html`
-                <ha-alert alert-type="info">
-                  Configure devices and settings through the integration's
-                  options flow.
-                </ha-alert>
-              `}
+          <ha-alert alert-type="error">
+            ${this._error}
+            <ha-button
+              slot="action"
+              appearance="plain"
+              @click=${() => this._fetchConfig()}
+            >
+              Retry
+            </ha-button>
+          </ha-alert>
         </div>
       </ha-card>
     `;
@@ -283,8 +279,14 @@ class PvOptimizerPanel extends LitElement {
     }
 
     return html`
+      <div class="header">
+        ${this._renderHeader()}
+      </div>
+
+      ${this._error ? this._renderErrorCard() : ""}
+
       <div class="card-container">
-        ${this._renderStatusCard()} ${this._renderGlobalConfigCard()}
+        ${this._renderGlobalConfigCard()}
         ${this._renderDevicesCard()}
       </div>
     `;
@@ -296,8 +298,28 @@ class PvOptimizerPanel extends LitElement {
         display: block;
         padding: 16px;
         background-color: var(--primary-background-color);
-        --app-header-background-color: var(--sidebar-background-color);
-        --ha-card-border-radius: 8px;
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        background-color: var(--app-header-background-color, var(--primary-color));
+        color: var(--app-header-text-color, white);
+        margin: -16px -16px 16px -16px;
+        --md-sys-color-primary: var(--app-header-text-color, white);
+      }
+
+      .header .name {
+        font-size: 24px;
+        font-weight: 400;
+      }
+      
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 16px;
       }
 
       .card-container {
@@ -311,6 +333,7 @@ class PvOptimizerPanel extends LitElement {
         flex: 0 1 auto;
         min-width: 350px;
         max-width: 500px;
+        border-radius: var(--ha-card-border-radius, 8px);
       }
 
       .card-header {
@@ -416,6 +439,11 @@ class PvOptimizerPanel extends LitElement {
       @media all and (max-width: 820px) {
         :host {
           padding: 8px;
+        }
+        .header {
+            margin: -8px -8px 8px -8px;
+            padding: 8px;
+            font-size: 20px;
         }
         .card-container {
           gap: 8px;
