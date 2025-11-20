@@ -13,6 +13,8 @@ class PvOptimizerPanel extends LitElement {
       _config: { type: Object, state: true },
       _loading: { type: Boolean, state: true },
       _error: { type: String, state: true },
+      _lastUpdateTimestamp: { type: Object, state: true },
+      _elapsedSeconds: { type: Number, state: true },
     };
   }
 
@@ -22,6 +24,9 @@ class PvOptimizerPanel extends LitElement {
     this._loading = true;
     this._error = null;
     this._refreshInterval = null;
+    this._secondInterval = null;
+    this._lastUpdateTimestamp = null;
+    this._elapsedSeconds = null;
   }
 
   connectedCallback() {
@@ -32,6 +37,11 @@ class PvOptimizerPanel extends LitElement {
     this._refreshInterval = setInterval(() => {
       this._fetchConfig();
     }, 30000);
+
+    // Update elapsed time every second
+    this._secondInterval = setInterval(() => {
+      this._updateElapsedTime();
+    }, 1000);
   }
 
   disconnectedCallback() {
@@ -39,6 +49,16 @@ class PvOptimizerPanel extends LitElement {
     if (this._refreshInterval) {
       clearInterval(this._refreshInterval);
       this._refreshInterval = null;
+    }
+    if (this._secondInterval) {
+      clearInterval(this._secondInterval);
+      this._secondInterval = null;
+    }
+  }
+
+  _updateElapsedTime() {
+    if (this._lastUpdateTimestamp) {
+      this._elapsedSeconds = Math.floor((new Date() - this._lastUpdateTimestamp) / 1000);
     }
   }
 
@@ -68,6 +88,12 @@ class PvOptimizerPanel extends LitElement {
       });
 
       this._config = response;
+      if (response?.optimizer_stats?.last_update_timestamp) {
+        this._lastUpdateTimestamp = new Date(response.optimizer_stats.last_update_timestamp);
+        this._updateElapsedTime();
+      } else {
+        this._lastUpdateTimestamp = null;
+      }
       this._loading = false;
       this._error = null;
     } catch (error) {
@@ -172,11 +198,11 @@ class PvOptimizerPanel extends LitElement {
             </div>
             <div class="config-group">
               <div class="config-label">Last Update Timestamp</div>
-              <div class="config-value">${stats.last_update_timestamp ? new Date(stats.last_update_timestamp).toLocaleString() : 'N/A'}</div>
+              <div class="config-value">${this._lastUpdateTimestamp ? this._lastUpdateTimestamp.toLocaleString() : 'N/A'}</div>
             </div>
             <div class="config-group">
               <div class="config-label">Elapsed Time Since Last Update</div>
-              <div class="config-value">${stats.elapsed_seconds_since_update ? stats.elapsed_seconds_since_update.toFixed(0) + ' s' : 'N/A'}</div>
+              <div class="config-value">${this._elapsedSeconds !== null ? `${this._elapsedSeconds} s` : 'N/A'}</div>
             </div>
           ` : html`
             <div class="loading">⏳ Loading stats...</div>
