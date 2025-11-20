@@ -147,28 +147,40 @@ class PvOptimizerPanel extends LitElement {
       return html``;
     }
 
-    const gc = this._config.global_config;
+    const stats = this._config.optimizer_stats;
 
     return html`
       <ha-card outlined>
         <h1 class="card-header">Global Configuration</h1>
         <div class="card-content">
-          <div class="config-group">
-            <div class="config-label">PV Surplus Sensor</div>
-            <div class="config-value">
-              ${gc.surplus_sensor_entity_id || "Not configured"}
+          ${stats ? html`
+            <div class="config-group">
+              <div class="config-label">Current Surplus</div>
+              <div class="config-value">${stats.current_surplus.toFixed(2)} W</div>
             </div>
-          </div>
-          <div class="config-group">
-            <div class="config-label">Sliding Window Size</div>
-            <div class="config-value">${gc.sliding_window_size || 5} minutes</div>
-          </div>
-          <div class="config-group">
-            <div class="config-label">Optimization Cycle Time</div>
-            <div class="config-value">
-              ${gc.optimization_cycle_time || 60} seconds
+            <div class="config-group">
+              <div class="config-label">Averaged Surplus</div>
+              <div class="config-value">${stats.averaged_surplus.toFixed(2)} W</div>
             </div>
-          </div>
+            <div class="config-group">
+              <div class="config-label">Potential Power of Switched-On Devices</div>
+              <div class="config-value">${stats.potential_power_on_devices.toFixed(2)} W</div>
+            </div>
+            <div class="config-group">
+              <div class="config-label">Measured Power of Switched-On Devices</div>
+              <div class="config-value">${stats.measured_power_on_devices.toFixed(2)} W</div>
+            </div>
+            <div class="config-group">
+              <div class="config-label">Last Update Timestamp</div>
+              <div class="config-value">${stats.last_update_timestamp ? new Date(stats.last_update_timestamp).toLocaleString() : 'N/A'}</div>
+            </div>
+            <div class="config-group">
+              <div class="config-label">Elapsed Time Since Last Update</div>
+              <div class="config-value">${stats.elapsed_seconds_since_update ? stats.elapsed_seconds_since_update.toFixed(0) + ' s' : 'N/A'}</div>
+            </div>
+          ` : html`
+            <div class="loading">⏳ Loading stats...</div>
+          `}
         </div>
       </ha-card>
     `;
