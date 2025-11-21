@@ -550,7 +550,7 @@ class PvOptimizerPanel extends LitElement {
       /* Device Cards */
       .device-card {
         padding: 16px;
-        border-left: 4px solid transparent;
+        border-left: 4px solid var(--divider-color);
       }
       .device-card.active {
         border-left-color: var(--primary-color);
