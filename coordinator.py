@@ -87,6 +87,27 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
 
     async def async_set_config(self, data: Dict[str, Any]) -> None:
         """Set the global configuration."""
+        self.global_config.update(data)
+        new_data = dict(self.config_entry.data)
+        new_data["global"] = self.global_config
+        self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+        self.async_set_update_interval(timedelta(seconds=self.global_config[CONF_OPTIMIZATION_CYCLE_TIME]))
+
+    def update_device_config(self, device_name: str, key: str, value: Any) -> None:
+        """Update device configuration in memory."""
+        for device in self.devices:
+            if device[CONF_NAME] == device_name:
+                device[key] = value
+                break
+
+    async def _async_update_data(self) -> Dict[str, Any]:
+        """
+        Fetch data for the optimization cycle.
+        
+        UPDATED: Now runs two parallel optimizations:
+        1. Real optimization (existing logic)
+        2. Simulation optimization (new logic, no state sync)
+        """
         # Step 1: Data Aggregation - Gather current states for ALL devices
         await self._aggregate_device_data()
 
