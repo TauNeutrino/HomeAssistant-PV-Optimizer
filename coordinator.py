@@ -173,6 +173,8 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
             # Simulation data (NEW)
             "simulation_power_budget": sim_power_budget,
             "simulation_ideal_on_list": sim_ideal_list,
+            # UI Fleshout
+            "last_update_timestamp": dt_util.now(),
         }
 
     async def _aggregate_device_data(self) -> None:

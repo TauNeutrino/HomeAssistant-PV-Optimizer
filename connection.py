@@ -61,6 +61,7 @@ Response Structure:
 
 import logging
 import voluptuous as vol
+from datetime import datetime
 
 from homeassistant.components import websocket_api
 from homeassistant.core import callback
@@ -197,6 +198,28 @@ async def async_setup_connection(hass):
                     "config": device_config,  # Static configuration
                     "state": device_state,    # Dynamic state
                 })
+
+            # Calculate optimizer statistics
+            surplus_sensor_entity_id = coordinator.global_config.get("surplus_sensor_entity_id")
+            current_surplus_state = hass.states.get(surplus_sensor_entity_id) if surplus_sensor_entity_id else None
+            current_surplus = float(current_surplus_state.state) if current_surplus_state and current_surplus_state.state not in ['unknown', 'unavailable'] else 0.0
+            if coordinator.global_config.get("invert_surplus_value", False):
+                current_surplus *= -1
+
+            potential_power = sum(d["config"]["power"] for d in response_data["devices"] if d["state"].get("is_on"))
+            measured_power = sum(d["state"]["measured_power_avg"] for d in response_data["devices"] if d["state"].get("is_on") and d["state"].get("measured_power_avg") is not None)
+            
+            last_update_timestamp = coordinator.data.get("last_update_timestamp")
+            elapsed_seconds = (datetime.now(last_update_timestamp.tzinfo) - last_update_timestamp).total_seconds() if last_update_timestamp else None
+
+            response_data["optimizer_stats"] = {
+                "current_surplus": current_surplus,
+                "averaged_surplus": coordinator.data.get("surplus_avg", 0.0),
+                "potential_power_on_devices": potential_power,
+                "measured_power_on_devices": measured_power,
+                "last_update_timestamp": last_update_timestamp.isoformat() if last_update_timestamp else None,
+                "elapsed_seconds_since_update": elapsed_seconds,
+            }
             
             # Send successful response to frontend
             connection.send_result(msg["id"], response_data)

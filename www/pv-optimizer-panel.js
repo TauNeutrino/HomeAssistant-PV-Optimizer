@@ -22,6 +22,8 @@ class PvOptimizerPanel extends LitElement {
       _loading: { type: Boolean, state: true },
       _error: { type: String, state: true },
       _showComparison: { type: Boolean, state: true },  // NEW: Toggle for comparison view
+      _lastUpdateTimestamp: { type: Object, state: true },
+      _elapsedSeconds: { type: Number, state: true },
     };
   }
 
@@ -32,16 +34,24 @@ class PvOptimizerPanel extends LitElement {
     this._error = null;
     this._refreshInterval = null;
     this._showComparison = false;  // Start with separate cards view
+    this._secondInterval = null;
+    this._lastUpdateTimestamp = null;
+    this._elapsedSeconds = null;
   }
 
   connectedCallback() {
     super.connectedCallback();
     this._fetchConfig();
-    
+
     // Auto-refresh every 30 seconds
     this._refreshInterval = setInterval(() => {
       this._fetchConfig();
     }, 30000);
+
+    // Update elapsed time every second
+    this._secondInterval = setInterval(() => {
+      this._updateElapsedTime();
+    }, 1000);
   }
 
   disconnectedCallback() {
@@ -49,6 +59,16 @@ class PvOptimizerPanel extends LitElement {
     if (this._refreshInterval) {
       clearInterval(this._refreshInterval);
       this._refreshInterval = null;
+    }
+    if (this._secondInterval) {
+      clearInterval(this._secondInterval);
+      this._secondInterval = null;
+    }
+  }
+
+  _updateElapsedTime() {
+    if (this._lastUpdateTimestamp) {
+      this._elapsedSeconds = Math.floor((new Date() - this._lastUpdateTimestamp) / 1000);
     }
   }
 
@@ -78,6 +98,12 @@ class PvOptimizerPanel extends LitElement {
       });
 
       this._config = response;
+      if (response?.optimizer_stats?.last_update_timestamp) {
+        this._lastUpdateTimestamp = new Date(response.optimizer_stats.last_update_timestamp);
+        this._updateElapsedTime();
+      } else {
+        this._lastUpdateTimestamp = null;
+      }
       this._loading = false;
       this._error = null;
     } catch (error) {
@@ -107,77 +133,71 @@ class PvOptimizerPanel extends LitElement {
    */
   _getIdealDevices(sensorName) {
     if (!this.hass) return [];
-    
+
     const entity = this.hass.states[`sensor.pv_optimizer_${sensorName}`];
     if (!entity) return [];
-    
+
     return entity.attributes.device_details || [];
   }
 
   _getPowerBudget(key) {
     if (!this.hass) return 0;
-    
+
     const sensorName = key === 'real' ? 'power_budget' : 'simulation_power_budget';
     const entity = this.hass.states[`sensor.pv_optimizer_${sensorName}`];
     if (!entity) return 0;
-    
+
     return parseFloat(entity.state) || 0;
   }
 
   _renderStatusCard() {
     const ready = !this._loading && !this._error && this._config;
-    
+
+    return html`
+      <div class="header">
+      <div class="name">PV Optimizer</div>
+      <div class="header-right">
+        <ha-button
+          appearance="filled"
+          @click=${this._openConfiguration}
+        >
+          <ha-icon slot="icon" .icon=${"mdi:cog"}></ha-icon>
+          Open Configuration
+        </ha-button>
+        ${ready
+        ? html`
+              <ha-icon
+                class="icon"
+                .icon=${"mdi:check-circle-outline"}
+                style="color: var(--success-color, green);"
+              ></ha-icon>
+            `
+        : html`
+              <ha-icon
+                class="icon"
+                .icon=${"mdi:alert-circle-outline"}
+                style="color: var(--error-color, red);"
+              ></ha-icon>
+            `}
+        </div>
+      </div>
+    `;
+  }
+
+  _renderErrorCard() {
     return html`
       <ha-card outlined>
-        <h1 class="card-header">
-          <div class="name">PV Optimizer</div>
-          ${ready
-            ? html`
-                <ha-icon
-                  class="icon"
-                  .icon=${"mdi:check-circle-outline"}
-                  style="color: var(--success-color, green);"
-                ></ha-icon>
-              `
-            : html`
-                <ha-icon
-                  class="icon"
-                  .icon=${"mdi:alert-circle-outline"}
-                  style="color: var(--error-color, red);"
-                ></ha-icon>
-              `}
-        </h1>
         <div class="card-content">
-          ${this._error
-            ? html`
-                <ha-alert alert-type="error">
-                  ${this._error}
-                  <ha-button
-                    slot="action"
-                    appearance="plain"
-                    @click=${() => this._fetchConfig()}
-                  >
-                    Retry
-                  </ha-button>
-                </ha-alert>
-              `
-            : html`
-                <ha-alert alert-type="info">
-                  Configure devices and settings through the integration's
-                  options flow. Click the button below to manage your PV
-                  Optimizer devices.
-                </ha-alert>
-              `}
-
-          <div class="config-button-container">
+          <ha-alert alert-type="error">
+            ${this._error}
             <ha-button
-              appearance="filled"
-              @click=${this._openConfiguration}
+              slot="action"
+              appearance="plain"
+              @click=${() => this._fetchConfig()}
             >
-              <ha-icon slot="icon" .icon=${"mdi:cog"}></ha-icon>
-              Open Configuration
+              Retry
             </ha-button>
-          </div>
+          </ha-alert>
         </div>
       </ha-card>
     `;
@@ -188,28 +208,40 @@ class PvOptimizerPanel extends LitElement {
       return html``;
     }
 
-    const gc = this._config.global_config;
+    const stats = this._config.optimizer_stats;
 
     return html`
       <ha-card outlined>
         <h1 class="card-header">Global Configuration</h1>
         <div class="card-content">
-          <div class="config-group">
-            <div class="config-label">PV Surplus Sensor</div>
-            <div class="config-value">
-              ${gc.surplus_sensor_entity_id || "Not configured"}
+          ${stats ? html`
+            <div class="config-group">
+              <div class="config-label">Current Surplus</div>
+              <div class="config-value">${stats.current_surplus.toFixed(2)} W</div>
             </div>
-          </div>
-          <div class="config-group">
-            <div class="config-label">Sliding Window Size</div>
-            <div class="config-value">${gc.sliding_window_size || 5} minutes</div>
-          </div>
-          <div class="config-group">
-            <div class="config-label">Optimization Cycle Time</div>
-            <div class="config-value">
-              ${gc.optimization_cycle_time || 60} seconds
+            <div class="config-group">
+              <div class="config-label">Averaged Surplus</div>
+              <div class="config-value">${stats.averaged_surplus.toFixed(2)} W</div>
             </div>
-          </div>
+            <div class="config-group">
+              <div class="config-label">Potential Power of Switched-On Devices</div>
+              <div class="config-value">${stats.potential_power_on_devices.toFixed(2)} W</div>
+            </div>
+            <div class="config-group">
+              <div class="config-label">Measured Power of Switched-On Devices</div>
+              <div class="config-value">${stats.measured_power_on_devices.toFixed(2)} W</div>
+            </div>
+            <div class="config-group">
+              <div class="config-label">Last Update Timestamp</div>
+              <div class="config-value">${this._lastUpdateTimestamp ? this._lastUpdateTimestamp.toLocaleString() : 'N/A'}</div>
+            </div>
+            <div class="config-group">
+              <div class="config-label">Elapsed Time Since Last Update</div>
+              <div class="config-value">${this._elapsedSeconds !== null ? `${this._elapsedSeconds} s` : 'N/A'}</div>
+            </div>
+          ` : html`
+            <div class="loading">⏳ Loading stats...</div>
+          `}
         </div>
       </ha-card>
     `;
@@ -231,13 +263,13 @@ class PvOptimizerPanel extends LitElement {
         </h1>
         <div class="card-content">
           ${devices.length === 0
-            ? html`
+        ? html`
                 <div class="empty-state">
                   <div style="font-size: 32px; margin-bottom: 12px;">📊</div>
                   <div>No devices in ideal ${title.toLowerCase()} state</div>
                 </div>
               `
-            : html`
+        : html`
                 <div class="ideal-summary">
                   <div class="summary-item">
                     <div class="summary-label">Devices Active</div>
@@ -286,7 +318,7 @@ class PvOptimizerPanel extends LitElement {
   _renderComparisonTable() {
     const realDevices = this._getIdealDevices('real_ideal_devices');
     const simDevices = this._getIdealDevices('simulation_ideal_devices');
-    
+
     // Get all unique device names
     const allDeviceNames = new Set([
       ...realDevices.map(d => d.name),
@@ -331,13 +363,13 @@ class PvOptimizerPanel extends LitElement {
             </thead>
             <tbody>
               ${Array.from(allDeviceNames).map(name => {
-                const realDevice = realDevices.find(d => d.name === name);
-                const simDevice = simDevices.find(d => d.name === name);
-                const inReal = !!realDevice;
-                const inSim = !!simDevice;
-                const power = (realDevice || simDevice)?.power || 0;
+      const realDevice = realDevices.find(d => d.name === name);
+      const simDevice = simDevices.find(d => d.name === name);
+      const inReal = !!realDevice;
+      const inSim = !!simDevice;
+      const power = (realDevice || simDevice)?.power || 0;
 
-                return html`
+      return html`
                   <tr>
                     <td class="device-name-col">${name}</td>
                     <td>${power}W</td>
@@ -349,7 +381,7 @@ class PvOptimizerPanel extends LitElement {
                     </td>
                   </tr>
                 `;
-              })}
+    })}
             </tbody>
           </table>
         </div>
@@ -378,13 +410,13 @@ class PvOptimizerPanel extends LitElement {
           ${device.optimization_enabled ? html`<div><strong>Real Opt:</strong> ✅ Enabled</div>` : ''}
           ${device.simulation_active ? html`<div><strong>Simulation:</strong> 🧪 Active</div>` : ''}
           ${state.measured_power_avg
-            ? html`
+        ? html`
                 <div>
                   <strong>Measured:</strong> ⚡
                   ${state.measured_power_avg.toFixed(1)}W
                 </div>
               `
-            : ""}
+        : ""}
         </div>
       </div>
     `;
@@ -398,7 +430,7 @@ class PvOptimizerPanel extends LitElement {
         <h1 class="card-header">Devices (${devices.length})</h1>
         <div class="card-content">
           ${devices.length === 0
-            ? html`
+        ? html`
                 <div class="empty-state">
                   <div style="font-size: 48px; margin-bottom: 16px;">📱</div>
                   <div style="font-weight: 500; margin-bottom: 8px;">
@@ -409,7 +441,7 @@ class PvOptimizerPanel extends LitElement {
                   </div>
                 </div>
               `
-            : html`
+        : html`
                 <div class="device-list">
                   ${devices.map((device) => this._renderDeviceCard(device))}
                 </div>
@@ -450,20 +482,22 @@ class PvOptimizerPanel extends LitElement {
         ? html`${this._renderComparisonTable()}`
         : html`
             ${this._renderIdealDevicesCard(
-              "Real Optimization",
-              "real_ideal_devices",
-              "mdi:lightning-bolt",
-              "var(--success-color, #4caf50)"
-            )}
+          "Real Optimization",
+          "real_ideal_devices",
+          "mdi:lightning-bolt",
+          "var(--success-color, #4caf50)"
+        )}
             ${this._renderIdealDevicesCard(
-              "Simulation",
-              "simulation_ideal_devices",
-              "mdi:test-tube",
-              "var(--info-color, #2196f3)"
-            )}
+          "Simulation",
+          "simulation_ideal_devices",
+          "mdi:test-tube",
+          "var(--info-color, #2196f3)"
+        )}
           `}
 
       ${this._renderDevicesCard()}
+
+      ${this._error ? this._renderErrorCard() : ""}
     `;
   }
 
@@ -471,14 +505,44 @@ class PvOptimizerPanel extends LitElement {
     return css`
       :host {
         display: block;
-        padding: 0;
+        padding: 16px;
         background-color: var(--primary-background-color);
-        --app-header-background-color: var(--sidebar-background-color);
-        --ha-card-border-radius: 8px;
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        background-color: var(--app-header-background-color, var(--primary-color));
+        color: var(--app-header-text-color, white);
+        margin: -16px -16px 16px -16px;
+        --md-sys-color-primary: var(--app-header-text-color, white);
+      }
+
+      .header .name {
+        font-size: 24px;
+        font-weight: 400;
+      }
+      
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .card-container {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 16px;
       }
 
       ha-card {
-        margin: 16px;
+        flex: 0 1 auto;
+        min-width: 350px;
+        max-width: 500px;
+        border-radius: var(--ha-card-border-radius, 8px);
       }
 
       .card-header {
@@ -488,6 +552,7 @@ class PvOptimizerPanel extends LitElement {
         padding: 16px;
         font-size: 18px;
         font-weight: 600;
+        gap: 16px;
       }
 
       .card-header .name {
@@ -503,8 +568,7 @@ class PvOptimizerPanel extends LitElement {
       }
 
       .config-button-container {
-        text-align: center;
-        padding: 16px 0;
+        display: none;
       }
 
       .toggle-container {
@@ -711,9 +775,20 @@ class PvOptimizerPanel extends LitElement {
         display: flex;
       }
 
-      @media all and (max-width: 450px), all and (max-height: 500px) {
+      @media all and (max-width: 820px) {
+        :host {
+          padding: 8px;
+        }
+        .header {
+            margin: -8px -8px 8px -8px;
+            padding: 8px;
+            font-size: 20px;
+        }
+        .card-container {
+          gap: 8px;
+        }
         ha-card {
-          margin: 8px;
+          margin: 0;
         }
 
         .device-details {
