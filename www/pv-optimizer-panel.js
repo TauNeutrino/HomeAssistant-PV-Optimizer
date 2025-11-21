@@ -402,6 +402,13 @@ class PvOptimizerPanel extends LitElement {
         grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
         gap: 24px;
         margin-top: 24px;
+        align-items: start;
+      }
+
+      .main-column {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
       }
 
       .dual-grid {
@@ -455,13 +462,19 @@ class PvOptimizerPanel extends LitElement {
 
       /* Cards */
       ha-card {
-        height: 100%;
         display: flex;
         flex-direction: column;
         background: var(--ha-card-background, var(--card-background-color, white));
         border: 1px solid var(--divider-color, #e0e0e0);
         transition: all 0.3s ease;
       }
+      
+      /* Only stretch cards in grids where they share a row */
+      .dual-grid ha-card,
+      .devices-grid ha-card {
+        height: 100%;
+      }
+
       .card-header {
         padding: 16px;
         margin: 0;
