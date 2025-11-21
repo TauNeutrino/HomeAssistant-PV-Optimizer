@@ -164,14 +164,20 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
 
         # Return data for sensors
         surplus_avg = await self._get_averaged_surplus()
+        
+        # Clamp values to 0 for UI display as negative values are meaningless to user
+        ui_surplus_avg = max(0.0, surplus_avg)
+        ui_real_power_budget = max(0.0, real_power_budget)
+        ui_sim_power_budget = max(0.0, sim_power_budget)
+
         return {
             # Real optimization data (existing)
-            "power_budget": real_power_budget,
-            "surplus_avg": surplus_avg,
+            "power_budget": ui_real_power_budget,
+            "surplus_avg": ui_surplus_avg,
             "ideal_on_list": real_ideal_list,
             
             # Simulation data (NEW)
-            "simulation_power_budget": sim_power_budget,
+            "simulation_power_budget": ui_sim_power_budget,
             "simulation_ideal_on_list": sim_ideal_list,
             # UI Fleshout
             "last_update_timestamp": dt_util.now(),
