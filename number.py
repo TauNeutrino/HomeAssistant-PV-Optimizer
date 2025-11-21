@@ -157,6 +157,10 @@ class PVOptimizerNumber(CoordinatorEntity, NumberEntity):
             "number", "set_value",
             {"entity_id": self._numeric_entity_id, "value": value}
         )
+        # Force immediate state update in UI
+        self.async_write_ha_state()
+        # Trigger immediate optimization cycle
+        await self.coordinator.async_request_refresh()
 
 
 class PVOptimizerPriorityNumber(CoordinatorEntity, NumberEntity):
@@ -209,6 +213,11 @@ class PVOptimizerPriorityNumber(CoordinatorEntity, NumberEntity):
                 config_data["devices"] = self.coordinator.devices
                 self.hass.config_entries.async_update_entry(self.coordinator.config_entry, data=config_data)
                 _LOGGER.info(f"Updated priority for device {self._device_name} to {int(value)}")
+                
+                # Force immediate state update in UI
+                self.async_write_ha_state()
+                # Trigger immediate optimization cycle
+                await self.coordinator.async_request_refresh()
                 break
 
 
@@ -260,6 +269,11 @@ class PVOptimizerMinOnTimeNumber(CoordinatorEntity, NumberEntity):
                 config_data["devices"] = self.coordinator.devices
                 self.hass.config_entries.async_update_entry(self.coordinator.config_entry, data=config_data)
                 _LOGGER.info(f"Updated min on time for device {self._device_name} to {int(value)} min")
+                
+                # Force immediate state update in UI
+                self.async_write_ha_state()
+                # Trigger immediate optimization cycle
+                await self.coordinator.async_request_refresh()
                 break
 
 
@@ -311,4 +325,9 @@ class PVOptimizerMinOffTimeNumber(CoordinatorEntity, NumberEntity):
                 config_data["devices"] = self.coordinator.devices
                 self.hass.config_entries.async_update_entry(self.coordinator.config_entry, data=config_data)
                 _LOGGER.info(f"Updated min off time for device {self._device_name} to {int(value)} min")
+                
+                # Force immediate state update in UI
+                self.async_write_ha_state()
+                # Trigger immediate optimization cycle
+                await self.coordinator.async_request_refresh()
                 break
