@@ -15,6 +15,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
     DOMAIN,
@@ -114,7 +115,7 @@ class PVOptimizerSwitch(CoordinatorEntity, SwitchEntity):
         )
 
 
-class PVOptimizerOptimizationSwitch(CoordinatorEntity, SwitchEntity):
+class PVOptimizerOptimizationSwitch(CoordinatorEntity, SwitchEntity, RestoreEntity):
     """Switch for enabling/disabling optimization for a device - dynamic config entity."""
 
     _attr_has_entity_name = True
@@ -141,6 +142,16 @@ class PVOptimizerOptimizationSwitch(CoordinatorEntity, SwitchEntity):
             "model": f"{device_type.capitalize()} Device",
         }
 
+    async def async_added_to_hass(self) -> None:
+        """Restore state on startup."""
+        await super().async_added_to_hass()
+        state = await self.async_get_last_state()
+        if state:
+            is_on = state.state == "on"
+            # Restore state to coordinator memory
+            self.coordinator.update_device_config(self._device_name, CONF_OPTIMIZATION_ENABLED, is_on)
+            _LOGGER.debug(f"Restored optimization state for {self._device_name}: {is_on}")
+
     @property
     def is_on(self) -> bool:
         """Return true if optimization is enabled for this device."""
@@ -151,40 +162,26 @@ class PVOptimizerOptimizationSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Enable optimization for this device."""
-        for i, device in enumerate(self.coordinator.devices):
-            if device[CONF_NAME] == self._device_name:
-                self.coordinator.devices[i][CONF_OPTIMIZATION_ENABLED] = True
-                # Update config entry data
-                config_data = dict(self.coordinator.config_entry.data)
-                config_data["devices"] = self.coordinator.devices
-                self.hass.config_entries.async_update_entry(self.coordinator.config_entry, data=config_data)
-                _LOGGER.info(f"Enabled optimization for device: {self._device_name}")
-                
-                # Force immediate state update in UI
-                self.async_write_ha_state()
-                # Trigger immediate optimization cycle
-                await self.coordinator.async_request_refresh()
-                break
+        self.coordinator.update_device_config(self._device_name, CONF_OPTIMIZATION_ENABLED, True)
+        _LOGGER.info(f"Enabled optimization for device: {self._device_name}")
+        
+        # Force immediate state update in UI
+        self.async_write_ha_state()
+        # Trigger immediate optimization cycle
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Disable optimization for this device."""
-        for i, device in enumerate(self.coordinator.devices):
-            if device[CONF_NAME] == self._device_name:
-                self.coordinator.devices[i][CONF_OPTIMIZATION_ENABLED] = False
-                # Update config entry data
-                config_data = dict(self.coordinator.config_entry.data)
-                config_data["devices"] = self.coordinator.devices
-                self.hass.config_entries.async_update_entry(self.coordinator.config_entry, data=config_data)
-                _LOGGER.info(f"Disabled optimization for device: {self._device_name}")
-                
-                # Force immediate state update in UI
-                self.async_write_ha_state()
-                # Trigger immediate optimization cycle
-                await self.coordinator.async_request_refresh()
-                break
+        self.coordinator.update_device_config(self._device_name, CONF_OPTIMIZATION_ENABLED, False)
+        _LOGGER.info(f"Disabled optimization for device: {self._device_name}")
+        
+        # Force immediate state update in UI
+        self.async_write_ha_state()
+        # Trigger immediate optimization cycle
+        await self.coordinator.async_request_refresh()
 
 
-class PVOptimizerSimulationSwitch(CoordinatorEntity, SwitchEntity):
+class PVOptimizerSimulationSwitch(CoordinatorEntity, SwitchEntity, RestoreEntity):
     """
     Switch for enabling/disabling simulation mode for a device - NEW.
     
@@ -234,6 +231,16 @@ class PVOptimizerSimulationSwitch(CoordinatorEntity, SwitchEntity):
             "model": f"{device_type.capitalize()} Device",
         }
 
+    async def async_added_to_hass(self) -> None:
+        """Restore state on startup."""
+        await super().async_added_to_hass()
+        state = await self.async_get_last_state()
+        if state:
+            is_on = state.state == "on"
+            # Restore state to coordinator memory
+            self.coordinator.update_device_config(self._device_name, CONF_SIMULATION_ACTIVE, is_on)
+            _LOGGER.debug(f"Restored simulation state for {self._device_name}: {is_on}")
+
     @property
     def is_on(self) -> bool:
         """Return true if simulation is active for this device."""
@@ -245,34 +252,20 @@ class PVOptimizerSimulationSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Enable simulation for this device."""
-        for i, device in enumerate(self.coordinator.devices):
-            if device[CONF_NAME] == self._device_name:
-                self.coordinator.devices[i][CONF_SIMULATION_ACTIVE] = True
-                # Update config entry data
-                config_data = dict(self.coordinator.config_entry.data)
-                config_data["devices"] = self.coordinator.devices
-                self.hass.config_entries.async_update_entry(self.coordinator.config_entry, data=config_data)
-                _LOGGER.info(f"Enabled simulation for device: {self._device_name}")
-                
-                # Force immediate state update in UI
-                self.async_write_ha_state()
-                # Trigger immediate optimization cycle
-                await self.coordinator.async_request_refresh()
-                break
+        self.coordinator.update_device_config(self._device_name, CONF_SIMULATION_ACTIVE, True)
+        _LOGGER.info(f"Enabled simulation for device: {self._device_name}")
+        
+        # Force immediate state update in UI
+        self.async_write_ha_state()
+        # Trigger immediate optimization cycle
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Disable simulation for this device."""
-        for i, device in enumerate(self.coordinator.devices):
-            if device[CONF_NAME] == self._device_name:
-                self.coordinator.devices[i][CONF_SIMULATION_ACTIVE] = False
-                # Update config entry data
-                config_data = dict(self.coordinator.config_entry.data)
-                config_data["devices"] = self.coordinator.devices
-                self.hass.config_entries.async_update_entry(self.coordinator.config_entry, data=config_data)
-                _LOGGER.info(f"Disabled simulation for device: {self._device_name}")
-                
-                # Force immediate state update in UI
-                self.async_write_ha_state()
-                # Trigger immediate optimization cycle
-                await self.coordinator.async_request_refresh()
-                break
+        self.coordinator.update_device_config(self._device_name, CONF_SIMULATION_ACTIVE, False)
+        _LOGGER.info(f"Disabled simulation for device: {self._device_name}")
+        
+        # Force immediate state update in UI
+        self.async_write_ha_state()
+        # Trigger immediate optimization cycle
+        await self.coordinator.async_request_refresh()
