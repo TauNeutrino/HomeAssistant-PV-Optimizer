@@ -115,6 +115,9 @@ async def async_setup_entry(
 class PVOptimizerNumber(CoordinatorEntity, NumberEntity):
     """Number for PV Optimizer appliance."""
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "target_value"
+
     def __init__(self, coordinator: PVOptimizerCoordinator, device: Dict[str, Any], target: Dict[str, Any]) -> None:
         """Initialize the number."""
         super().__init__(coordinator)
@@ -124,7 +127,6 @@ class PVOptimizerNumber(CoordinatorEntity, NumberEntity):
         self._numeric_entity_id = target[CONF_NUMERIC_ENTITY_ID]
         self._activated_value = target[CONF_ACTIVATED_VALUE]
         self._deactivated_value = target[CONF_DEACTIVATED_VALUE]
-        self._attr_name = f"PVO {self._device_name} {self._numeric_entity_id.split('.')[-1]}"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{self._device_name}_{self._numeric_entity_id}"
         self._attr_entity_registry_enabled_default = True
         # Get device type for model
@@ -160,11 +162,13 @@ class PVOptimizerNumber(CoordinatorEntity, NumberEntity):
 class PVOptimizerPriorityNumber(CoordinatorEntity, NumberEntity):
     """Dynamic config number for device priority - dynamic config entity."""
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "priority"
+
     def __init__(self, coordinator: PVOptimizerCoordinator, device_name: str) -> None:
         """Initialize the priority number."""
         super().__init__(coordinator)
         self._device_name = device_name
-        self._attr_name = f"PVO {device_name} Priority"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_priority"
         self._attr_entity_registry_enabled_default = True
         self._attr_min_value = 1
@@ -211,11 +215,13 @@ class PVOptimizerPriorityNumber(CoordinatorEntity, NumberEntity):
 class PVOptimizerMinOnTimeNumber(CoordinatorEntity, NumberEntity):
     """Dynamic config number for minimum on time - dynamic config entity."""
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "min_on_time"
+
     def __init__(self, coordinator: PVOptimizerCoordinator, device_name: str) -> None:
         """Initialize the min on time number."""
         super().__init__(coordinator)
         self._device_name = device_name
-        self._attr_name = f"PVO {device_name} Min On Time"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_min_on_time"
         self._attr_entity_registry_enabled_default = True
         self._attr_min_value = 0
@@ -260,11 +266,13 @@ class PVOptimizerMinOnTimeNumber(CoordinatorEntity, NumberEntity):
 class PVOptimizerMinOffTimeNumber(CoordinatorEntity, NumberEntity):
     """Dynamic config number for minimum off time - dynamic config entity."""
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "min_off_time"
+
     def __init__(self, coordinator: PVOptimizerCoordinator, device_name: str) -> None:
         """Initialize the min off time number."""
         super().__init__(coordinator)
         self._device_name = device_name
-        self._attr_name = f"PVO {device_name} Min Off Time"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_min_off_time"
         self._attr_entity_registry_enabled_default = True
         self._attr_min_value = 0

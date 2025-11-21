@@ -176,5 +176,70 @@
         }
       }
     }
+  },
+  "entity": {
+    "sensor": {
+      "power_budget": {
+        "name": "Power Budget"
+      },
+      "surplus_avg": {
+        "name": "Averaged Surplus"
+      },
+      "current_surplus": {
+        "name": "Current Surplus"
+      },
+      "sliding_window": {
+        "name": "Sliding Window Size"
+      },
+      "cycle_time": {
+        "name": "Optimization Cycle Time"
+      },
+      "simulation_power_budget": {
+        "name": "Simulation Power Budget"
+      },
+      "real_ideal_devices": {
+        "name": "Real Ideal Devices"
+      },
+      "simulation_ideal_devices": {
+        "name": "Simulation Ideal Devices"
+      },
+      "is_locked": {
+        "name": "Locked"
+      },
+      "measured_power_avg": {
+        "name": "Measured Power Avg"
+      },
+      "last_target_state": {
+        "name": "Last Target State"
+      },
+      "contribution_to_budget": {
+        "name": "Contribution to Budget"
+      }
+    },
+    "switch": {
+      "manual_control": {
+        "name": "Manual Control"
+      },
+      "optimization_enabled": {
+        "name": "Optimization Enabled"
+      },
+      "simulation_active": {
+        "name": "Simulation Active"
+      }
+    },
+    "number": {
+      "priority": {
+        "name": "Priority"
+      },
+      "min_on_time": {
+        "name": "Min On Time"
+      },
+      "min_off_time": {
+        "name": "Min Off Time"
+      },
+      "target_value": {
+        "name": "Target Value"
+      }
+    }
   }
 }

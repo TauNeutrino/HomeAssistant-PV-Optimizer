@@ -78,12 +78,12 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=config_entry.data["global"][CONF_OPTIMIZATION_CYCLE_TIME]),
         )
         self.config_entry = config_entry
-        self.devices = config_entry.data.get("devices", [])
-        self.global_config = config_entry.data.get("global", {})
+        self.devices: List[Dict[str, Any]] = config_entry.data.get("devices", [])
+        self.global_config: Dict[str, Any] = config_entry.data.get("global", {})
         self.entity_registry = er.async_get(hass)
-        self.device_states = {}  # Cache for device states and timestamps
-        self.device_instances = {}  # Cache for device class instances
-        self.device_state_changes = {}  # Track actual state change timestamps
+        self.device_states: Dict[str, Dict[str, Any]] = {}  # Cache for device states and timestamps
+        self.device_instances: Dict[str, PVDevice] = {}  # Cache for device class instances
+        self.device_state_changes: Dict[str, Dict[str, datetime]] = {}  # Track actual state change timestamps
 
     async def async_set_config(self, data: Dict[str, Any]) -> None:
         """Set the global configuration."""
@@ -362,7 +362,7 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(f"Ideal state calculated: {ideal_on_list} with remaining budget {remaining_budget:.2f}W")
         return ideal_on_list
 
-    def _knapsack_select(self, devices: List[Dict], budget: float) -> List[str]:
+    def _knapsack_select(self, devices: List[Dict[str, Any]], budget: float) -> List[str]:
         """Select subset of devices that maximize power without exceeding budget."""
         available_devices = [
             d for d in devices
@@ -418,7 +418,7 @@ class PVOptimizerCoordinator(DataUpdateCoordinator):
         surplus_entity = self.global_config[CONF_SURPLUS_SENSOR_ENTITY_ID]
         invert_value = self.global_config.get(CONF_INVERT_SURPLUS_VALUE, False)
         window_minutes = self.global_config[CONF_SLIDING_WINDOW_SIZE]
-        now = datetime.now()
+        now = dt_util.now()
         start_time = now - timedelta(minutes=window_minutes)
 
         try:

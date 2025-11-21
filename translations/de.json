@@ -176,5 +176,70 @@
         }
       }
     }
+  },
+  "entity": {
+    "sensor": {
+      "power_budget": {
+        "name": "Leistungsbudget"
+      },
+      "surplus_avg": {
+        "name": "Durchschnittlicher Überschuss"
+      },
+      "current_surplus": {
+        "name": "Aktueller Überschuss"
+      },
+      "sliding_window": {
+        "name": "Gleitende Fenstergröße"
+      },
+      "cycle_time": {
+        "name": "Optimierungszykluszeit"
+      },
+      "simulation_power_budget": {
+        "name": "Simulations-Leistungsbudget"
+      },
+      "real_ideal_devices": {
+        "name": "Reale Ideale Geräte"
+      },
+      "simulation_ideal_devices": {
+        "name": "Simulation Ideale Geräte"
+      },
+      "is_locked": {
+        "name": "Gesperrt"
+      },
+      "measured_power_avg": {
+        "name": "Gemessene Leistung Avg"
+      },
+      "last_target_state": {
+        "name": "Letzter Zielstatus"
+      },
+      "contribution_to_budget": {
+        "name": "Beitrag zum Budget"
+      }
+    },
+    "switch": {
+      "manual_control": {
+        "name": "Manuelle Steuerung"
+      },
+      "optimization_enabled": {
+        "name": "Optimierung aktiviert"
+      },
+      "simulation_active": {
+        "name": "Simulation aktiv"
+      }
+    },
+    "number": {
+      "priority": {
+        "name": "Priorität"
+      },
+      "min_on_time": {
+        "name": "Minimale Einschaltzeit"
+      },
+      "min_off_time": {
+        "name": "Minimale Ausschaltzeit"
+      },
+      "target_value": {
+        "name": "Zielwert"
+      }
+    }
   }
 }

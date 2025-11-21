@@ -63,6 +63,9 @@ async def async_setup_entry(
 class PVOptimizerSwitch(CoordinatorEntity, SwitchEntity):
     """Switch for PV Optimizer appliance manual control."""
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "manual_control"
+
     def __init__(self, coordinator: PVOptimizerCoordinator, device: Dict[str, Any]) -> None:
         """Initialize the switch."""
         super().__init__(coordinator)
@@ -70,7 +73,6 @@ class PVOptimizerSwitch(CoordinatorEntity, SwitchEntity):
         self._device_name = device[CONF_NAME]
         self._switch_entity_id = device.get(CONF_SWITCH_ENTITY_ID)
         self._invert = device.get(CONF_INVERT_SWITCH, False)
-        self._attr_name = f"PVO {self._device_name}"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{self._device_name}_switch"
         self._attr_entity_registry_enabled_default = True
         # Get device type for model
@@ -115,11 +117,13 @@ class PVOptimizerSwitch(CoordinatorEntity, SwitchEntity):
 class PVOptimizerOptimizationSwitch(CoordinatorEntity, SwitchEntity):
     """Switch for enabling/disabling optimization for a device - dynamic config entity."""
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "optimization_enabled"
+
     def __init__(self, coordinator: PVOptimizerCoordinator, device_name: str) -> None:
         """Initialize the optimization switch."""
         super().__init__(coordinator)
         self._device_name = device_name
-        self._attr_name = f"PVO {device_name} Optimization Enabled"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_optimization_enabled"
         self._attr_entity_registry_enabled_default = True
         # Get device type for model
@@ -204,11 +208,13 @@ class PVOptimizerSimulationSwitch(CoordinatorEntity, SwitchEntity):
     - Default: False (backward compatibility)
     """
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "simulation_active"
+
     def __init__(self, coordinator: PVOptimizerCoordinator, device_name: str) -> None:
         """Initialize the simulation switch."""
         super().__init__(coordinator)
         self._device_name = device_name
-        self._attr_name = f"PVO {device_name} Simulation Active"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_simulation_active"
         self._attr_entity_registry_enabled_default = True
         self._attr_icon = "mdi:test-tube"  # Different icon to distinguish from optimization

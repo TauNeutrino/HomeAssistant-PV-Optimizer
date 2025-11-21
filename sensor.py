@@ -44,24 +44,24 @@ async def async_setup_entry(
     entities = []
 
     # Controller sensors (existing)
-    entities.append(PVOptimizerControllerSensor(coordinator, "power_budget", "Power Budget", "W", 1))
-    entities.append(PVOptimizerControllerSensor(coordinator, "surplus_avg", "Averaged Surplus", "W", 1))
+    entities.append(PVOptimizerControllerSensor(coordinator, "power_budget", "power_budget", "W", 1))
+    entities.append(PVOptimizerControllerSensor(coordinator, "surplus_avg", "surplus_avg", "W", 1))
     entities.append(PVOptimizerCurrentSurplusSensor(coordinator))
-    entities.append(PVOptimizerConfigSensor(coordinator, "sliding_window", "Sliding Window Size", "min"))
-    entities.append(PVOptimizerConfigSensor(coordinator, "cycle_time", "Optimization Cycle Time", "s"))
+    entities.append(PVOptimizerConfigSensor(coordinator, "sliding_window", "sliding_window", "min"))
+    entities.append(PVOptimizerConfigSensor(coordinator, "cycle_time", "cycle_time", "s"))
 
     # NEW: Simulation sensors
-    entities.append(PVOptimizerControllerSensor(coordinator, "simulation_power_budget", "Simulation Power Budget", "W", 1))
-    entities.append(PVOptimizerIdealDevicesListSensor(coordinator, "ideal_on_list", "Real Ideal Devices"))
-    entities.append(PVOptimizerIdealDevicesListSensor(coordinator, "simulation_ideal_on_list", "Simulation Ideal Devices"))
+    entities.append(PVOptimizerControllerSensor(coordinator, "simulation_power_budget", "simulation_power_budget", "W", 1))
+    entities.append(PVOptimizerIdealDevicesListSensor(coordinator, "ideal_on_list", "real_ideal_devices"))
+    entities.append(PVOptimizerIdealDevicesListSensor(coordinator, "simulation_ideal_on_list", "simulation_ideal_devices"))
 
     # Appliance sensors (existing) - monitoring entities
     for device in coordinator.devices:
         device_name = device[CONF_NAME]
-        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, ATTR_IS_LOCKED, "Locked", None))
-        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, ATTR_MEASURED_POWER_AVG, "Measured Power Avg", "W"))
-        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, ATTR_PVO_LAST_TARGET_STATE, "Last Target State", None))
-        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, "contribution_to_budget", "Contribution to Budget", "W"))
+        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, ATTR_IS_LOCKED, "is_locked", None))
+        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, ATTR_MEASURED_POWER_AVG, "measured_power_avg", "W"))
+        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, ATTR_PVO_LAST_TARGET_STATE, "last_target_state", None))
+        entities.append(PVOptimizerApplianceSensor(coordinator, device_name, "contribution_to_budget", "contribution_to_budget", "W"))
 
     async_add_entities(entities)
 
@@ -69,12 +69,14 @@ async def async_setup_entry(
 class PVOptimizerControllerSensor(CoordinatorEntity, SensorEntity):
     """Sensor for PV Optimizer controller."""
 
-    def __init__(self, coordinator: PVOptimizerCoordinator, data_key: str, name: str, unit: Optional[str], decimals: Optional[int] = None) -> None:
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: PVOptimizerCoordinator, data_key: str, translation_key: str, unit: Optional[str], decimals: Optional[int] = None) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._data_key = data_key
         self._decimals = decimals
-        self._attr_name = f"PV Optimizer {name}"
+        self._attr_translation_key = translation_key
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{data_key}"
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = SensorDeviceClass.POWER if unit == "W" else None
@@ -111,11 +113,13 @@ class PVOptimizerIdealDevicesListSensor(CoordinatorEntity, SensorEntity):
     NEW: Created for simulation feature to display both real and simulation results.
     """
 
-    def __init__(self, coordinator: PVOptimizerCoordinator, data_key: str, name: str) -> None:
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: PVOptimizerCoordinator, data_key: str, translation_key: str) -> None:
         """Initialize the ideal devices list sensor."""
         super().__init__(coordinator)
         self._data_key = data_key
-        self._attr_name = f"PV Optimizer {name}"
+        self._attr_translation_key = translation_key
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{data_key}_list"
         self._attr_icon = "mdi:format-list-checks"
         self._attr_entity_registry_enabled_default = True
@@ -168,12 +172,14 @@ class PVOptimizerIdealDevicesListSensor(CoordinatorEntity, SensorEntity):
 class PVOptimizerApplianceSensor(CoordinatorEntity, SensorEntity):
     """Sensor for PV Optimizer appliance."""
 
-    def __init__(self, coordinator: PVOptimizerCoordinator, device_name: str, data_key: str, name: str, unit: Optional[str]) -> None:
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: PVOptimizerCoordinator, device_name: str, data_key: str, translation_key: str, unit: Optional[str]) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._device_name = device_name
         self._data_key = data_key
-        self._attr_name = f"PVO {device_name} {name}"
+        self._attr_translation_key = translation_key
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_{data_key}"
         self._attr_unit_of_measurement = unit
         self._attr_entity_registry_enabled_default = True
@@ -212,10 +218,12 @@ class PVOptimizerApplianceSensor(CoordinatorEntity, SensorEntity):
 class PVOptimizerCurrentSurplusSensor(CoordinatorEntity, SensorEntity):
     """Sensor for current surplus value (sign-corrected)."""
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "current_surplus"
+
     def __init__(self, coordinator: PVOptimizerCoordinator) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_name = "PV Optimizer Current Surplus"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_current_surplus"
         self._attr_native_unit_of_measurement = "W"
         self._attr_device_class = SensorDeviceClass.POWER
@@ -252,11 +260,13 @@ class PVOptimizerCurrentSurplusSensor(CoordinatorEntity, SensorEntity):
 class PVOptimizerConfigSensor(CoordinatorEntity, SensorEntity):
     """Read-only sensor for global configuration values."""
 
-    def __init__(self, coordinator: PVOptimizerCoordinator, config_key: str, name: str, unit: str) -> None:
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: PVOptimizerCoordinator, config_key: str, translation_key: str, unit: str) -> None:
         """Initialize the config sensor."""
         super().__init__(coordinator)
         self._config_key = config_key
-        self._attr_name = f"PV Optimizer {name}"
+        self._attr_translation_key = translation_key
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{config_key}"
         self._attr_native_unit_of_measurement = unit
         self._attr_state_class = SensorStateClass.MEASUREMENT
