@@ -155,6 +155,11 @@ class PVOptimizerOptimizationSwitch(CoordinatorEntity, SwitchEntity):
                 config_data["devices"] = self.coordinator.devices
                 self.hass.config_entries.async_update_entry(self.coordinator.config_entry, data=config_data)
                 _LOGGER.info(f"Enabled optimization for device: {self._device_name}")
+                
+                # Force immediate state update in UI
+                self.async_write_ha_state()
+                # Trigger immediate optimization cycle
+                await self.coordinator.async_request_refresh()
                 break
 
     async def async_turn_off(self, **kwargs: Any) -> None:
@@ -167,6 +172,11 @@ class PVOptimizerOptimizationSwitch(CoordinatorEntity, SwitchEntity):
                 config_data["devices"] = self.coordinator.devices
                 self.hass.config_entries.async_update_entry(self.coordinator.config_entry, data=config_data)
                 _LOGGER.info(f"Disabled optimization for device: {self._device_name}")
+                
+                # Force immediate state update in UI
+                self.async_write_ha_state()
+                # Trigger immediate optimization cycle
+                await self.coordinator.async_request_refresh()
                 break
 
 
@@ -237,6 +247,11 @@ class PVOptimizerSimulationSwitch(CoordinatorEntity, SwitchEntity):
                 config_data["devices"] = self.coordinator.devices
                 self.hass.config_entries.async_update_entry(self.coordinator.config_entry, data=config_data)
                 _LOGGER.info(f"Enabled simulation for device: {self._device_name}")
+                
+                # Force immediate state update in UI
+                self.async_write_ha_state()
+                # Trigger immediate optimization cycle
+                await self.coordinator.async_request_refresh()
                 break
 
     async def async_turn_off(self, **kwargs: Any) -> None:
@@ -249,4 +264,9 @@ class PVOptimizerSimulationSwitch(CoordinatorEntity, SwitchEntity):
                 config_data["devices"] = self.coordinator.devices
                 self.hass.config_entries.async_update_entry(self.coordinator.config_entry, data=config_data)
                 _LOGGER.info(f"Disabled simulation for device: {self._device_name}")
+                
+                # Force immediate state update in UI
+                self.async_write_ha_state()
+                # Trigger immediate optimization cycle
+                await self.coordinator.async_request_refresh()
                 break
