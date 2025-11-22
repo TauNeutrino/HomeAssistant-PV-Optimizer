@@ -1,0 +1,7 @@
+{
+    "title": "PV Optimizer",
+    "config": {
+        "flow_title": "PV Optimizer"
+    },
+    "icon": "mdi:solar-power"
+}
