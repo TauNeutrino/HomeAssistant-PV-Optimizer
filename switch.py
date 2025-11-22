@@ -1,10 +1,10 @@
 """
-Switch Entities for PV Optimizer Integration
+Switch Entities for PV Optimizer Integration - Multi-Config-Entry Architecture
 
-UPDATED: Added simulation_active switch for all devices
-- Allows marking devices for simulation without real control
-- Independent from optimization_enabled (can have both active)
-- Backward compatible: defaults to False for existing devices
+This module creates switch entities for device entries only:
+- Manual Control Switch (for switch-type devices)
+- Optimization Enabled Switch (all devices)
+- Simulation Active Switch (all devices)
 """
 
 import logging
@@ -25,10 +25,10 @@ from .const import (
     CONF_INVERT_SWITCH,
     TYPE_SWITCH,
     CONF_OPTIMIZATION_ENABLED,
-    CONF_SIMULATION_ACTIVE,  # NEW
+    CONF_SIMULATION_ACTIVE,
     normalize_device_name,
 )
-from .coordinator import PVOptimizerCoordinator
+from .coordinators import DeviceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,55 +38,48 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up switches for PV Optimizer."""
-    coordinator: PVOptimizerCoordinator = hass.data[DOMAIN][config_entry.entry_id]
-
+    """Set up switches for PV Optimizer device."""
+    coordinator: DeviceCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    device_config = config_entry.data.get("device_config", {})
+    device_type = device_config.get(CONF_TYPE)
+    
     entities = []
-
-    # Create switches for switch-type devices (manual control)
-    for device in coordinator.devices:
-        if device[CONF_TYPE] == TYPE_SWITCH:
-            entities.append(PVOptimizerSwitch(coordinator, device))
-
-    # Create optimization enabled switches for all devices - dynamic config entities
-    for device in coordinator.devices:
-        device_name = device[CONF_NAME]
-        entities.append(PVOptimizerOptimizationSwitch(coordinator, device_name))
-
-    # Create simulation active switches for all devices - NEW
-    for device in coordinator.devices:
-        device_name = device[CONF_NAME]
-        entities.append(PVOptimizerSimulationSwitch(coordinator, device_name))
-
+    
+    # Manual control switch (only for switch-type devices)
+    if device_type == TYPE_SWITCH:
+        entities.append(DeviceManualSwitch(coordinator))
+    
+    # Optimization enabled switch (all devices)
+    entities.append(DeviceOptimizationSwitch(coordinator))
+    
+    # Simulation active switch (all devices)
+    entities.append(DeviceSimulationSwitch(coordinator))
+    
     async_add_entities(entities)
 
 
-class PVOptimizerSwitch(CoordinatorEntity, SwitchEntity):
-    """Switch for PV Optimizer appliance manual control."""
-
+class DeviceManualSwitch(CoordinatorEntity, SwitchEntity):
+    """Manual control switch for switch-type devices."""
+    
     _attr_has_entity_name = True
     _attr_translation_key = "manual_control"
-
-    def __init__(self, coordinator: PVOptimizerCoordinator, device: Dict[str, Any]) -> None:
+    
+    def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the switch."""
         super().__init__(coordinator)
-        self._device = device
-        self._device_name = device[CONF_NAME]
-        self._switch_entity_id = device.get(CONF_SWITCH_ENTITY_ID)
-        self._invert = device.get(CONF_INVERT_SWITCH, False)
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{self._device_name}_switch"
-        self._attr_entity_registry_enabled_default = True
-        # Get device type for model
-        device_type = self._device.get("type", "Unknown")
-        normalized_name = normalize_device_name(self._device_name)
+        device_config = coordinator.device_config
+        self._switch_entity_id = device_config.get(CONF_SWITCH_ENTITY_ID)
+        self._invert = device_config.get(CONF_INVERT_SWITCH, False)
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_manual_control"
         
+        # Link to device
+        device_name = coordinator.device_name
+        device_type = device_config.get(CONF_TYPE, "Unknown")
+        normalized_name = normalize_device_name(device_name)
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
-            "name": f"PVO {self._device_name}",
-            "manufacturer": "PV Optimizer",
-            "model": f"{device_type.capitalize()} Device",
         }
-
+    
     @property
     def is_on(self) -> bool:
         """Return true if the switch is on."""
@@ -97,7 +90,7 @@ class PVOptimizerSwitch(CoordinatorEntity, SwitchEntity):
             on_state = state.state == "on"
             return not on_state if self._invert else on_state
         return False
-
+    
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
         target_state = "off" if self._invert else "on"
@@ -105,7 +98,7 @@ class PVOptimizerSwitch(CoordinatorEntity, SwitchEntity):
             "switch", "turn_on" if target_state == "on" else "turn_off",
             {"entity_id": self._switch_entity_id}
         )
-
+    
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
         target_state = "on" if self._invert else "off"
@@ -115,157 +108,93 @@ class PVOptimizerSwitch(CoordinatorEntity, SwitchEntity):
         )
 
 
-class PVOptimizerOptimizationSwitch(CoordinatorEntity, SwitchEntity, RestoreEntity):
-    """Switch for enabling/disabling optimization for a device - dynamic config entity."""
-
+class DeviceOptimizationSwitch(CoordinatorEntity, SwitchEntity, RestoreEntity):
+    """Optimization enabled switch for device."""
+    
     _attr_has_entity_name = True
-    _attr_translation_key = "optimization_enabled"
-
-    def __init__(self, coordinator: PVOptimizerCoordinator, device_name: str) -> None:
-        """Initialize the optimization switch."""
+   _attr_translation_key = "optimization_enabled"
+    
+    def __init__(self, coordinator: DeviceCoordinator) -> None:
+        """Initialize the switch."""
         super().__init__(coordinator)
-        self._device_name = device_name
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_optimization_enabled"
-        self._attr_entity_registry_enabled_default = True
-        # Get device type for model
-        device_type = "Unknown"
-        for device in coordinator.devices:
-            if device[CONF_NAME] == device_name:
-                device_type = device.get("type", "Unknown")
-                break
-        normalized_name = normalize_device_name(device_name)
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_optimization_enabled"
         
+        # Link to device
+        device_name = coordinator.device_name
+        device_type = coordinator.device_config.get(CONF_TYPE, "Unknown")
+        normalized_name = normalize_device_name(device_name)
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
-            "name": f"PVO {device_name}",
-            "manufacturer": "PV Optimizer",
-            "model": f"{device_type.capitalize()} Device",
         }
-
+    
     async def async_added_to_hass(self) -> None:
         """Restore state on startup."""
         await super().async_added_to_hass()
         state = await self.async_get_last_state()
-        if state:
-            is_on = state.state == "on"
-            # Restore state to coordinator memory
-            self.coordinator.update_device_config(self._device_name, CONF_OPTIMIZATION_ENABLED, is_on)
-            _LOGGER.debug(f"Restored optimization state for {self._device_name}: {is_on}")
-
+        if state and state.state not in ("unknown", "unavailable"):
+            value = state.state == "on"
+            self.coordinator.update_config(CONF_OPTIMIZATION_ENABLED, value)
+            _LOGGER.debug(f"Restored optimization enabled for {self.coordinator.device_name}: {value}")
+    
     @property
     def is_on(self) -> bool:
-        """Return true if optimization is enabled for this device."""
-        for device in self.coordinator.devices:
-            if device[CONF_NAME] == self._device_name:
-                return device.get(CONF_OPTIMIZATION_ENABLED, True)
-        return True  # Default to enabled
-
+        """Return true if optimization is enabled."""
+        return self.coordinator.device_config.get(CONF_OPTIMIZATION_ENABLED, True)
+    
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Enable optimization for this device."""
-        self.coordinator.update_device_config(self._device_name, CONF_OPTIMIZATION_ENABLED, True)
-        _LOGGER.info(f"Enabled optimization for device: {self._device_name}")
-        
-        # Force immediate state update in UI
+        """Enable optimization."""
+        self.coordinator.update_config(CONF_OPTIMIZATION_ENABLED, True)
+        _LOGGER.info(f"Enabled optimization for device: {self.coordinator.device_name}")
         self.async_write_ha_state()
-        # Trigger immediate optimization cycle
-        await self.coordinator.async_request_refresh()
-
+    
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Disable optimization for this device."""
-        self.coordinator.update_device_config(self._device_name, CONF_OPTIMIZATION_ENABLED, False)
-        _LOGGER.info(f"Disabled optimization for device: {self._device_name}")
-        
-        # Force immediate state update in UI
+        """Disable optimization."""
+        self.coordinator.update_config(CONF_OPTIMIZATION_ENABLED, False)
+        _LOGGER.info(f"Disabled optimization for device: {self.coordinator.device_name}")
         self.async_write_ha_state()
-        # Trigger immediate optimization cycle
-        await self.coordinator.async_request_refresh()
 
 
-class PVOptimizerSimulationSwitch(CoordinatorEntity, SwitchEntity, RestoreEntity):
-    """
-    Switch for enabling/disabling simulation mode for a device - NEW.
+class DeviceSimulationSwitch(CoordinatorEntity, SwitchEntity, RestoreEntity):
+    """Simulation active switch for device."""
     
-    Purpose:
-    -------
-    Allows marking devices for simulation without actual control.
-    When enabled, device participates in simulation calculations but
-    is not physically controlled by the optimizer.
-    
-    Use Cases:
-    ---------
-    - Testing device configurations before real deployment
-    - "What-if" scenarios (e.g., "What if I add a washing machine?")
-    - Comparing simulation results with real optimization
-    
-    Behavior:
-    --------
-    - Independent from optimization_enabled (both can be active)
-    - Device can be in both real and simulation optimization simultaneously
-    - Simulation never triggers physical device control
-    - Default: False (backward compatibility)
-    """
-
     _attr_has_entity_name = True
     _attr_translation_key = "simulation_active"
-
-    def __init__(self, coordinator: PVOptimizerCoordinator, device_name: str) -> None:
-        """Initialize the simulation switch."""
+    
+    def __init__(self, coordinator: DeviceCoordinator) -> None:
+        """Initialize the switch."""
         super().__init__(coordinator)
-        self._device_name = device_name
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_simulation_active"
-        self._attr_entity_registry_enabled_default = True
-        self._attr_icon = "mdi:test-tube"  # Different icon to distinguish from optimization
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_simulation_active"
         
-        # Get device type for model
-        device_type = "Unknown"
-        for device in coordinator.devices:
-            if device[CONF_NAME] == device_name:
-                device_type = device.get("type", "Unknown")
-                break
+        # Link to device
+        device_name = coordinator.device_name
+        device_type = coordinator.device_config.get(CONF_TYPE, "Unknown")
         normalized_name = normalize_device_name(device_name)
-        
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
-            "name": f"PVO {device_name}",
-            "manufacturer": "PV Optimizer",
-            "model": f"{device_type.capitalize()} Device",
         }
-
+    
     async def async_added_to_hass(self) -> None:
         """Restore state on startup."""
         await super().async_added_to_hass()
         state = await self.async_get_last_state()
-        if state:
-            is_on = state.state == "on"
-            # Restore state to coordinator memory
-            self.coordinator.update_device_config(self._device_name, CONF_SIMULATION_ACTIVE, is_on)
-            _LOGGER.debug(f"Restored simulation state for {self._device_name}: {is_on}")
-
+        if state and state.state not in ("unknown", "unavailable"):
+            value = state.state == "on"
+            self.coordinator.update_config(CONF_SIMULATION_ACTIVE, value)
+            _LOGGER.debug(f"Restored simulation active for {self.coordinator.device_name}: {value}")
+    
     @property
     def is_on(self) -> bool:
-        """Return true if simulation is active for this device."""
-        for device in self.coordinator.devices:
-            if device[CONF_NAME] == self._device_name:
-                # Default to False for backward compatibility with existing devices
-                return device.get(CONF_SIMULATION_ACTIVE, False)
-        return False
-
+        """Return true if simulation is active."""
+        return self.coordinator.device_config.get(CONF_SIMULATION_ACTIVE, False)
+    
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Enable simulation for this device."""
-        self.coordinator.update_device_config(self._device_name, CONF_SIMULATION_ACTIVE, True)
-        _LOGGER.info(f"Enabled simulation for device: {self._device_name}")
-        
-        # Force immediate state update in UI
+        """Enable simulation."""
+        self.coordinator.update_config(CONF_SIMULATION_ACTIVE, True)
+        _LOGGER.info(f"Enabled simulation for device: {self.coordinator.device_name}")
         self.async_write_ha_state()
-        # Trigger immediate optimization cycle
-        await self.coordinator.async_request_refresh()
-
+    
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Disable simulation for this device."""
-        self.coordinator.update_device_config(self._device_name, CONF_SIMULATION_ACTIVE, False)
-        _LOGGER.info(f"Disabled simulation for device: {self._device_name}")
-        
-        # Force immediate state update in UI
+        """Disable simulation."""
+        self.coordinator.update_config(CONF_SIMULATION_ACTIVE, False)
+        _LOGGER.info(f"Disabled simulation for device: {self.coordinator.device_name}")
         self.async_write_ha_state()
-        # Trigger immediate optimization cycle
-        await self.coordinator.async_request_refresh()

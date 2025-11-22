@@ -1,9 +1,16 @@
 """
-Config Flow for PV Optimizer Integration
+Config Flow for PV Optimizer Integration - Multi-Config-Entry Architecture
 
-UPDATED: Added simulation_active option for devices
-- Backward compatible: defaults to False for existing devices
-- Can be enabled independently from optimization_enabled
+This module handles the configuration flow for both service and device entries:
+- Service Entry: Created on first install, contains global configuration
+- Device Entries: Created for each device, contains device-specific configuration
+
+Flow Logic:
+----------
+1. User clicks "Add Integration" → PV Optimizer
+2. Check if service entry exists:
+   - NO → Create service entry (global config)
+   - YES → Create device entry (device config)
 """
 
 import logging
@@ -34,7 +41,7 @@ from .const import (
     CONF_MIN_ON_TIME,
     CONF_MIN_OFF_TIME,
     CONF_OPTIMIZATION_ENABLED,
-    CONF_SIMULATION_ACTIVE,  # NEW
+    CONF_SIMULATION_ACTIVE,
     CONF_MEASURED_POWER_ENTITY_ID,
     CONF_POWER_THRESHOLD,
     CONF_INVERT_SWITCH,
@@ -45,43 +52,229 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _get_service_entry(hass):
+    """Get the service config entry if it exists."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.data.get("entry_type") == "service":
+            return entry
+    return None
+
+
 class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for PV Optimizer (initial setup)."""
+    """Handle a config flow for PV Optimizer."""
 
     VERSION = 1
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
+    def __init__(self):
+        """Initialize config flow."""
+        self._device_base_config = None  # Stores device config before numeric targets step
+
     async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Handle the initial setup step - configure global parameters only."""
+        """
+        Handle the initial step - route to service or device setup.
+        
+        Logic:
+        ------
+        - If no service entry exists → create service entry (first install)
+        - If service entry exists → create device entry
+        """
+        service_entry = _get_service_entry(self.hass)
+        
+        if service_entry is None:
+            # No service entry → first install
+            return await self.async_step_service_config(user_input)
+        else:
+            # Service exists → add device
+            return await self.async_step_device_type(user_input)
+
+    async def async_step_service_config(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Configure the service entry (global configuration)."""
         if user_input is not None:
-            # Create the config entry with only global config
+            # Create service entry
             return self.async_create_entry(
-                title="PV Optimizer",
+                title="PV Optimizer Service",
                 data={
+                    "entry_type": "service",
                     "global": user_input,
-                    "devices": [],  # Start with empty devices list
                 },
             )
 
         # Schema for global configuration
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_SURPLUS_SENSOR_ENTITY_ID): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor", device_class="power"),
-                ),
-                vol.Optional(CONF_INVERT_SURPLUS_VALUE, default=False): selector.BooleanSelector(),
-                vol.Required(CONF_SLIDING_WINDOW_SIZE, default=5): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=1, max=60, unit_of_measurement="minutes"),
-                ),
-                vol.Required(CONF_OPTIMIZATION_CYCLE_TIME, default=60): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=10, max=300, unit_of_measurement="seconds"),
-                ),
+        schema = vol.Schema({
+            vol.Required(CONF_SURPLUS_SENSOR_ENTITY_ID): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", device_class="power"),
+            ),
+            vol.Optional(CONF_INVERT_SURPLUS_VALUE, default=False): selector.BooleanSelector(),
+            vol.Required(CONF_SLIDING_WINDOW_SIZE, default=5): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=60, unit_of_measurement="minutes"),
+            ),
+            vol.Required(CONF_OPTIMIZATION_CYCLE_TIME, default=60): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=10, max=300, unit_of_measurement="seconds"),
+            ),
+        })
+
+        return self.async_show_form(
+            step_id="service_config",
+            data_schema=schema,
+            description_placeholders={
+                "info": "Configure global settings for PV Optimizer. You can add devices after setup."
             }
         )
 
+    async def async_step_device_type(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Let user choose device type (Switch or Numeric)."""
+        if user_input is not None:
+            device_type = user_input[CONF_TYPE]
+            # Store type and move to device configuration
+            return await self.async_step_device_config(device_type=device_type)
+
+        schema = vol.Schema({
+            vol.Required(CONF_TYPE): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=[
+                    selector.SelectOptionDict(value=TYPE_SWITCH, label="Switch Device (On/Off Control)"),
+                    selector.SelectOptionDict(value=TYPE_NUMERIC, label="Numeric Device (Value Adjustment)"),
+                ]),
+            ),
+        })
+
         return self.async_show_form(
-            step_id="user",
+            step_id="device_type",
             data_schema=schema,
+            description_placeholders={
+                "info": "Select the type of device you want to add."
+            }
+        )
+
+    async def async_step_device_config(self, user_input: Optional[Dict[str, Any]] = None, device_type: str = None) -> FlowResult:
+        """Configure device based on type."""
+        # Get device type from flow or parameter
+        if device_type is None:
+            device_type = self._device_base_config.get(CONF_TYPE) if self._device_base_config else TYPE_SWITCH
+        
+        if user_input is not None:
+            device_config = {
+                CONF_TYPE: device_type,
+                **user_input,
+            }
+            
+            if device_type == TYPE_SWITCH:
+                # Create switch device entry
+                return self.async_create_entry(
+                    title=f"PVO {user_input[CONF_NAME]}",
+                    data={
+                        "entry_type": "device",
+                        "device_config": device_config,
+                    },
+                )
+            elif device_type == TYPE_NUMERIC:
+                # Store base config and move to numeric targets step
+                self._device_base_config = device_config
+                return await self.async_step_numeric_targets()
+
+        # Build schema based on device type
+        base_schema = {
+            vol.Required(CONF_NAME): selector.TextSelector(),
+            vol.Required(CONF_PRIORITY, default=5): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=10, mode=selector.NumberSelectorMode.BOX),
+            ),
+            vol.Required(CONF_POWER, default=0): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, 
+                    step=0.1, 
+                    unit_of_measurement="W",
+                    mode=selector.NumberSelectorMode.BOX
+                ),
+            ),
+            vol.Optional(CONF_OPTIMIZATION_ENABLED, default=True): selector.BooleanSelector(),
+            vol.Optional(CONF_SIMULATION_ACTIVE, default=False): selector.BooleanSelector(),
+        }
+
+        # Add type-specific fields
+        if device_type == TYPE_SWITCH:
+            base_schema[vol.Required(CONF_SWITCH_ENTITY_ID)] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="switch"),
+            )
+            base_schema[vol.Optional(CONF_INVERT_SWITCH, default=False)] = selector.BooleanSelector()
+
+        # Common optional fields
+        base_schema.update({
+            vol.Optional(CONF_MEASURED_POWER_ENTITY_ID): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", device_class="power"),
+            ),
+            vol.Optional(CONF_POWER_THRESHOLD, default=100): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, 
+                    step=0.1, 
+                    unit_of_measurement="W",
+                    mode=selector.NumberSelectorMode.BOX
+                ),
+            ),
+            vol.Optional(CONF_MIN_ON_TIME, default=0): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, 
+                    unit_of_measurement="minutes",
+                    mode=selector.NumberSelectorMode.BOX
+                ),
+            ),
+            vol.Optional(CONF_MIN_OFF_TIME, default=0): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, 
+                    unit_of_measurement="minutes",
+                    mode=selector.NumberSelectorMode.BOX
+                ),
+            ),
+        })
+
+        device_label = "Switch" if device_type == TYPE_SWITCH else "Numeric"
+        return self.async_show_form(
+            step_id="device_config",
+            data_schema=vol.Schema(base_schema),
+            description_placeholders={
+                "info": f"Configure {device_label} device for PV Optimizer."
+            }
+        )
+
+    async def async_step_numeric_targets(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Configure numeric targets for numeric devices."""
+        if user_input is not None:
+            # Add targets to device config
+            device_config = self._device_base_config
+            device_config[CONF_NUMERIC_TARGETS] = [
+                {
+                    CONF_NUMERIC_ENTITY_ID: user_input[CONF_NUMERIC_ENTITY_ID],
+                    CONF_ACTIVATED_VALUE: user_input[CONF_ACTIVATED_VALUE],
+                    CONF_DEACTIVATED_VALUE: user_input[CONF_DEACTIVATED_VALUE],
+                }
+            ]
+            
+            # Create numeric device entry
+            return self.async_create_entry(
+                title=f"PVO {device_config[CONF_NAME]}",
+                data={
+                    "entry_type": "device",
+                    "device_config": device_config,
+                },
+            )
+
+        schema = vol.Schema({
+            vol.Required(CONF_NUMERIC_ENTITY_ID): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="number"),
+            ),
+            vol.Required(CONF_ACTIVATED_VALUE): selector.NumberSelector(
+                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX),
+            ),
+            vol.Required(CONF_DEACTIVATED_VALUE): selector.NumberSelector(
+                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX),
+            ),
+        })
+
+        return self.async_show_form(
+            step_id="numeric_targets",
+            data_schema=schema,
+            description_placeholders={
+                "info": "Configure the numeric target for this device."
+            }
         )
 
     @staticmethod
@@ -97,19 +290,20 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry):
         """Initialize options flow."""
         self.config_entry = config_entry
-        self._device_to_edit = None
-        self._device_to_delete = None
-        self._device_base_config = None  # Stores base config before numeric targets step
 
     async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Manage the options - show menu."""
-        return self.async_show_menu(
-            step_id="init",
-            menu_options=["global_config", "manage_devices"],
-        )
+        """Manage the options."""
+        entry_type = self.config_entry.data.get("entry_type")
+        
+        if entry_type == "service":
+            # Service entry → only global config options
+            return await self.async_step_global_config(user_input)
+        else:
+            # Device entry → device config options
+            return await self.async_step_device_config(user_input)
 
     async def async_step_global_config(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Handle global configuration."""
+        """Handle global configuration options."""
         if user_input is not None:
             # Update global config
             new_data = dict(self.config_entry.data)
@@ -120,32 +314,30 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
         # Get current global config
         global_config = self.config_entry.data.get("global", {})
         
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_SURPLUS_SENSOR_ENTITY_ID,
-                    default=global_config.get(CONF_SURPLUS_SENSOR_ENTITY_ID)
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor", device_class="power"),
-                ),
-                vol.Optional(
-                    CONF_INVERT_SURPLUS_VALUE,
-                    default=global_config.get(CONF_INVERT_SURPLUS_VALUE, False)
-                ): selector.BooleanSelector(),
-                vol.Required(
-                    CONF_SLIDING_WINDOW_SIZE,
-                    default=global_config.get(CONF_SLIDING_WINDOW_SIZE, 5)
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=1, max=60, unit_of_measurement="minutes"),
-                ),
-                vol.Required(
-                    CONF_OPTIMIZATION_CYCLE_TIME,
-                    default=global_config.get(CONF_OPTIMIZATION_CYCLE_TIME, 60)
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=10, max=300, unit_of_measurement="seconds"),
-                ),
-            }
-        )
+        schema = vol.Schema({
+            vol.Required(
+                CONF_SURPLUS_SENSOR_ENTITY_ID,
+                default=global_config.get(CONF_SURPLUS_SENSOR_ENTITY_ID)
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", device_class="power"),
+            ),
+            vol.Optional(
+                CONF_INVERT_SURPLUS_VALUE,
+                default=global_config.get(CONF_INVERT_SURPLUS_VALUE, False)
+            ): selector.BooleanSelector(),
+            vol.Required(
+                CONF_SLIDING_WINDOW_SIZE,
+                default=global_config.get(CONF_SLIDING_WINDOW_SIZE, 5)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=60, unit_of_measurement="minutes"),
+            ),
+            vol.Required(
+                CONF_OPTIMIZATION_CYCLE_TIME,
+                default=global_config.get(CONF_OPTIMIZATION_CYCLE_TIME, 60)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=10, max=300, unit_of_measurement="seconds"),
+            ),
+        })
 
         return self.async_show_form(
             step_id="global_config",
@@ -155,256 +347,81 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
             }
         )
 
-    async def async_step_manage_devices(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Show device management menu."""
-        return self.async_show_menu(
-            step_id="manage_devices",
-            menu_options=["add_switch_device", "add_numeric_device"],
-        )
-
-    async def async_step_add_switch_device(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Add a new switch device."""
-        errors = {}
-
+    async def async_step_device_config(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Handle device configuration options."""
         if user_input is not None:
-            # Validate device name is unique
-            devices = self.config_entry.data.get("devices", [])
-            if any(d[CONF_NAME] == user_input[CONF_NAME] for d in devices):
-                errors["base"] = "duplicate_name"
-            else:
-                # Add switch device
-                device_config = {
-                    CONF_NAME: user_input[CONF_NAME],
-                    CONF_TYPE: TYPE_SWITCH,
-                    CONF_PRIORITY: user_input[CONF_PRIORITY],
-                    CONF_POWER: user_input[CONF_POWER],
-                    CONF_SWITCH_ENTITY_ID: user_input[CONF_SWITCH_ENTITY_ID],
-                    CONF_INVERT_SWITCH: user_input.get(CONF_INVERT_SWITCH, False),
-                    CONF_OPTIMIZATION_ENABLED: user_input.get(CONF_OPTIMIZATION_ENABLED, True),
-                    CONF_SIMULATION_ACTIVE: user_input.get(CONF_SIMULATION_ACTIVE, False),  # NEW
-                    CONF_MEASURED_POWER_ENTITY_ID: user_input.get(CONF_MEASURED_POWER_ENTITY_ID),
-                    CONF_POWER_THRESHOLD: user_input.get(CONF_POWER_THRESHOLD, 100),
-                    CONF_MIN_ON_TIME: user_input.get(CONF_MIN_ON_TIME, 0),
-                    CONF_MIN_OFF_TIME: user_input.get(CONF_MIN_OFF_TIME, 0),
-                }
-                
-                # Save device
-                new_data = dict(self.config_entry.data)
-                if "devices" not in new_data:
-                    new_data["devices"] = []
-                # Create a new list to ensure it's mutable
-                devices_list = list(new_data["devices"])
-                devices_list.append(device_config)
-                new_data["devices"] = devices_list
-                
-                _LOGGER.debug(f"Saving new device. Total devices: {len(new_data['devices'])}")
-                _LOGGER.debug(f"New data to save: {new_data}")
-                
-                self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-                
-                # Reload to create entities
-                await self.hass.config_entries.async_reload(self.config_entry.entry_id)
-                
-                return self.async_create_entry(title="", data={})
-
-        # Schema for switch device
-        schema = vol.Schema({
-            vol.Required(CONF_NAME): selector.TextSelector(),
-            vol.Required(CONF_PRIORITY, default=5): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=10, mode=selector.NumberSelectorMode.BOX),
-            ),
-            vol.Required(CONF_POWER, default=0): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    step=0.1,
-                    unit_of_measurement="W",
-                    mode=selector.NumberSelectorMode.BOX
-                ),
-            ),
-            vol.Required(CONF_SWITCH_ENTITY_ID): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="switch"),
-            ),
-            vol.Optional(CONF_INVERT_SWITCH, default=False): selector.BooleanSelector(),
-            vol.Optional(CONF_OPTIMIZATION_ENABLED, default=True): selector.BooleanSelector(),
-            vol.Optional(CONF_SIMULATION_ACTIVE, default=False): selector.BooleanSelector(),  # NEW
-            vol.Optional(CONF_MEASURED_POWER_ENTITY_ID): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor", device_class="power"),
-            ),
-            vol.Optional(CONF_POWER_THRESHOLD, default=100): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    step=0.1,
-                    unit_of_measurement="W",
-                    mode=selector.NumberSelectorMode.BOX
-                ),
-            ),
-            vol.Optional(CONF_MIN_ON_TIME, default=0): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    unit_of_measurement="minutes",
-                    mode=selector.NumberSelectorMode.BOX
-                ),
-            ),
-            vol.Optional(CONF_MIN_OFF_TIME, default=0): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    unit_of_measurement="minutes",
-                    mode=selector.NumberSelectorMode.BOX
-                ),
-            ),
-        })
-
-        return self.async_show_form(
-            step_id="add_switch_device",
-            data_schema=schema,
-            errors=errors,
-            description_placeholders={
-                "info": "Configure a new switch-type controllable device."
-            }
-        )
-
-    async def async_step_add_numeric_device(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Add a new numeric device."""
-        errors = {}
-
-        if user_input is not None:
-            # Validate device name is unique
-            devices = self.config_entry.data.get("devices", [])
-            if any(d[CONF_NAME] == user_input[CONF_NAME] for d in devices):
-                errors["base"] = "duplicate_name"
-            else:
-                # Store base config and move to numeric targets step
-                self._device_base_config = {
-                    CONF_NAME: user_input[CONF_NAME],
-                    CONF_TYPE: TYPE_NUMERIC,
-                    CONF_PRIORITY: user_input[CONF_PRIORITY],
-                    CONF_POWER: user_input[CONF_POWER],
-                    CONF_OPTIMIZATION_ENABLED: user_input.get(CONF_OPTIMIZATION_ENABLED, True),
-                    CONF_SIMULATION_ACTIVE: user_input.get(CONF_SIMULATION_ACTIVE, False),  # NEW
-                    CONF_MEASURED_POWER_ENTITY_ID: user_input.get(CONF_MEASURED_POWER_ENTITY_ID),
-                    CONF_POWER_THRESHOLD: user_input.get(CONF_POWER_THRESHOLD, 100),
-                    CONF_MIN_ON_TIME: user_input.get(CONF_MIN_ON_TIME, 0),
-                    CONF_MIN_OFF_TIME: user_input.get(CONF_MIN_OFF_TIME, 0),
-                }
-                return await self.async_step_numeric_targets()
-
-        # Schema for numeric device (without switch-specific fields)
-        schema = vol.Schema({
-            vol.Required(CONF_NAME): selector.TextSelector(),
-            vol.Required(CONF_PRIORITY, default=5): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=10, mode=selector.NumberSelectorMode.BOX),
-            ),
-            vol.Required(CONF_POWER, default=0): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    step=0.1,
-                    unit_of_measurement="W",
-                    mode=selector.NumberSelectorMode.BOX
-                ),
-            ),
-            vol.Optional(CONF_OPTIMIZATION_ENABLED, default=True): selector.BooleanSelector(),
-            vol.Optional(CONF_SIMULATION_ACTIVE, default=False): selector.BooleanSelector(),  # NEW
-            vol.Optional(CONF_MEASURED_POWER_ENTITY_ID): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor", device_class="power"),
-            ),
-            vol.Optional(CONF_POWER_THRESHOLD, default=100): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    step=0.1,
-                    unit_of_measurement="W",
-                    mode=selector.NumberSelectorMode.BOX
-                ),
-            ),
-            vol.Optional(CONF_MIN_ON_TIME, default=0): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    unit_of_measurement="minutes",
-                    mode=selector.NumberSelectorMode.BOX
-                ),
-            ),
-            vol.Optional(CONF_MIN_OFF_TIME, default=0): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    unit_of_measurement="minutes",
-                    mode=selector.NumberSelectorMode.BOX
-                ),
-            ),
-        })
-
-        return self.async_show_form(
-            step_id="add_numeric_device",
-            data_schema=schema,
-            errors=errors,
-            description_placeholders={
-                "info": "Configure a new numeric-type device. After clicking Next, you'll configure numeric targets."
-            }
-        )
-
-    async def async_step_numeric_targets(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Configure numeric targets (max 5)."""
-        if user_input is not None:
-            # Collect non-empty targets
-            targets = []
-            for i in range(1, 6):
-                entity = user_input.get(f"target_{i}_entity")
-                if entity:  # Only add if entity is specified
-                    targets.append({
-                        CONF_NUMERIC_ENTITY_ID: entity,
-                        CONF_ACTIVATED_VALUE: user_input.get(f"target_{i}_on", 0),
-                        CONF_DEACTIVATED_VALUE: user_input.get(f"target_{i}_off", 0),
-                    })
-            
-            # Add targets to device config
-            self._device_base_config[CONF_NUMERIC_TARGETS] = targets
-            
-            # Save device
+            # Update device config
             new_data = dict(self.config_entry.data)
-            if "devices" not in new_data:
-                new_data["devices"] = []
-            # Create a new list to ensure it's mutable
-            devices_list = list(new_data["devices"])
-            devices_list.append(self._device_base_config)
-            new_data["devices"] = devices_list
-            
-            _LOGGER.debug(f"Saving new numeric device. Total devices: {len(new_data['devices'])}")
-            
+            device_config = dict(new_data.get("device_config", {}))
+            # Update only the editable fields
+            device_config.update({
+                CONF_PRIORITY: user_input[CONF_PRIORITY],
+                CONF_POWER: user_input[CONF_POWER],
+                CONF_OPTIMIZATION_ENABLED: user_input.get(CONF_OPTIMIZATION_ENABLED, True),
+                CONF_SIMULATION_ACTIVE: user_input.get(CONF_SIMULATION_ACTIVE, False),
+                CONF_MIN_ON_TIME: user_input.get(CONF_MIN_ON_TIME, 0),
+                CONF_MIN_OFF_TIME: user_input.get(CONF_MIN_OFF_TIME, 0),
+            })
+            new_data["device_config"] = device_config
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-            
-            # Reload to create entities
-            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
-            
-            self._device_base_config = None
             return self.async_create_entry(title="", data={})
 
-        # Get existing targets if editing
-        existing_targets = []
-        if self._device_to_edit:
-            devices = self.config_entry.data.get("devices", [])
-            device = next((d for d in devices if d[CONF_NAME] == self._device_to_edit), None)
-            if device:
-                existing_targets = device.get(CONF_NUMERIC_TARGETS, [])
+        # Get current device config
+        device_config = self.config_entry.data.get("device_config", {})
+        
+        schema = vol.Schema({
+            vol.Required(
+                CONF_PRIORITY,
+                default=device_config.get(CONF_PRIORITY, 5)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=10, mode=selector.NumberSelectorMode.BOX),
+            ),
+            vol.Required(
+                CONF_POWER,
+                default=device_config.get(CONF_POWER, 0)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, 
+                    step=0.1, 
+                    unit_of_measurement="W",
+                    mode=selector.NumberSelectorMode.BOX
+                ),
+            ),
+            vol.Optional(
+                CONF_OPTIMIZATION_ENABLED,
+                default=device_config.get(CONF_OPTIMIZATION_ENABLED, True)
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_SIMULATION_ACTIVE,
+                default=device_config.get(CONF_SIMULATION_ACTIVE, False)
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_MIN_ON_TIME,
+                default=device_config.get(CONF_MIN_ON_TIME, 0)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, 
+                    unit_of_measurement="minutes",
+                    mode=selector.NumberSelectorMode.BOX
+                ),
+            ),
+            vol.Optional(
+                CONF_MIN_OFF_TIME,
+                default=device_config.get(CONF_MIN_OFF_TIME, 0)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, 
+                    unit_of_measurement="minutes",
+                    mode=selector.NumberSelectorMode.BOX
+                ),
+            ),
+        })
 
-        # Build schema for 5 targets
-        schema = {}
-        for i in range(1, 6):
-            target = existing_targets[i-1] if i-1 < len(existing_targets) else {}
-            
-            schema[vol.Optional(f"target_{i}_entity", default=target.get(CONF_NUMERIC_ENTITY_ID, ''))] = selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["number", "input_number"]),
-            )
-            schema[vol.Optional(f"target_{i}_on", default=target.get(CONF_ACTIVATED_VALUE, 0))] = selector.NumberSelector(
-                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX, step="any"),
-            )
-            schema[vol.Optional(f"target_{i}_off", default=target.get(CONF_DEACTIVATED_VALUE, 0))] = selector.NumberSelector(
-                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX, step="any"),
-            )
-
+        device_name = device_config.get(CONF_NAME, "Device")
         return self.async_show_form(
-            step_id="numeric_targets",
-            data_schema=vol.Schema(schema),
+            step_id="device_config",
+            data_schema=schema,
             description_placeholders={
-                "info": "Configure up to 5 numeric targets. Leave entity empty to skip. For each target, specify the entity and values for activated (ON) and deactivated (OFF) states."
+                "info": f"Configure options for {device_name}."
             }
         )
-
-

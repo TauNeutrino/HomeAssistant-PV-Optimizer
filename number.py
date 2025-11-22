@@ -1,64 +1,15 @@
 """
-Number Entities for PV Optimizer Integration
+Number Entities for PV Optimizer Integration - Multi-Config-Entry Architecture
 
-This module creates number entities that allow users to:
-1. Control numeric device targets (for numeric-type devices)
-2. Dynamically adjust device configuration (priority, min times)
-
-Purpose:
---------
-Provide interactive controls for both device operation and configuration
-through Home Assistant's native number entity interface.
-
-Entity Types Created:
---------------------
-1. Numeric Target Controls (PVOptimizerNumber):
-   - For numeric-type devices only
-   - One number entity per configured target
-   - Allows manual adjustment of target entity values
-   - Example: Adjust heat pump temperature setpoint manually
-
-2. Dynamic Configuration Numbers:
-   - Priority (PVOptimizerPriorityNumber): Adjust device priority (1-10)
-   - Min On Time (PVOptimizerMinOnTimeNumber): Adjust minimum on time
-   - Min Off Time (PVOptimizerMinOffTimeNumber): Adjust minimum off time
-   - Created for ALL devices (both switch and numeric types)
-   - Changes persist to config entry and apply immediately
-
-Architecture:
-------------
-All number entities extend CoordinatorEntity to:
-- Receive updates when coordinator refreshes
-- Link to parent device in device registry
-- Maintain consistent state across entities
-
-Dynamic Configuration Pattern:
------------------------------
-The dynamic configuration numbers (priority, min times) solve the problem
-of allowing runtime adjustments without requiring integration reload.
-
-Flow:
-1. User adjusts number via UI
-2. async_set_native_value() called
-3. Value stored in coordinator.devices list
-4. Config entry updated with new data
-5. Changes take effect in next optimization cycle
-6. No reload needed (unlike options flow changes)
-
-Benefits:
-- Immediate feedback
-- No service interruption
-- Easy experimentation with settings
-- Fine-tuning without UI navigation
-
-Device Linking:
---------------
-All entities include device_info to link them to their parent device,
-enabling proper organization in the device UI.
+This module creates number entities for device entries:
+- Priority Number (all devices)
+- Min On Time Number (all devices)
+- Min Off Time Number (all devices)
+- Target Value Numbers (numeric devices only)
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
@@ -81,7 +32,7 @@ from .const import (
     CONF_MIN_OFF_TIME,
     normalize_device_name,
 )
-from .coordinator import PVOptimizerCoordinator
+from .coordinators import DeviceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,253 +42,195 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up numbers for PV Optimizer."""
-    coordinator: PVOptimizerCoordinator = hass.data[DOMAIN][config_entry.entry_id]
-
+    """Set up numbers for PV Optimizer device."""
+    coordinator: DeviceCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    device_config = config_entry.data.get("device_config", {})
+    device_type = device_config.get(CONF_TYPE)
+    
     entities = []
-
-    # Create numbers for numeric-type devices
-    for device in coordinator.devices:
-        if device[CONF_TYPE] == TYPE_NUMERIC:
-            numeric_targets = device.get(CONF_NUMERIC_TARGETS, [])
-            for target in numeric_targets:
-                entities.append(PVOptimizerNumber(coordinator, device, target))
-
-    # Create dynamic config numbers for all devices - priority, min_on_time, min_off_time
-    for device in coordinator.devices:
-        device_name = device[CONF_NAME]
-        entities.append(PVOptimizerPriorityNumber(coordinator, device_name))
-        entities.append(PVOptimizerMinOnTimeNumber(coordinator, device_name))
-        entities.append(PVOptimizerMinOffTimeNumber(coordinator, device_name))
-
+    
+    # Priority number (all devices)
+    entities.append(DevicePriorityNumber(coordinator))
+    
+    # Min on/off time numbers (all devices)
+    entities.append(DeviceMinOnTimeNumber(coordinator))
+    entities.append(DeviceMinOffTimeNumber(coordinator))
+    
+    # Numeric target numbers (numeric devices only)
+    if device_type == TYPE_NUMERIC:
+        targets = device_config.get(CONF_NUMERIC_TARGETS, [])
+        for target in targets:
+            entities.append(DeviceTargetNumber(coordinator, target))
+    
     async_add_entities(entities)
 
 
-class PVOptimizerNumber(CoordinatorEntity, NumberEntity):
-    """Number for PV Optimizer appliance."""
-
+class DevicePriorityNumber(CoordinatorEntity, NumberEntity, RestoreEntity):
+    """Priority number for device."""
+    
     _attr_has_entity_name = True
-    _attr_translation_key = "target_value"
-
-    def __init__(self, coordinator: PVOptimizerCoordinator, device: Dict[str, Any], target: Dict[str, Any]) -> None:
+    _attr_translation_key = "priority"
+    
+    def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the number."""
         super().__init__(coordinator)
-        self._device = device
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_priority"
+        self._attr_native_min_value = 1
+        self._attr_native_max_value = 10
+        self._attr_native_step = 1
+        
+        # Link to device
+        device_name = coordinator.device_name
+        device_type = coordinator.device_config.get(CONF_TYPE, "Unknown")
+        normalized_name = normalize_device_name(device_name)
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
+        }
+    
+    async def async_added_to_hass(self) -> None:
+        """Restore state on startup."""
+        await super().async_added_to_hass()
+        state = await self.async_get_last_state()
+        if state and state.state not in ("unknown", "unavailable"):
+            value = int(float(state.state))
+            self.coordinator.update_config(CONF_PRIORITY, value)
+            _LOGGER.debug(f"Restored priority for {self.coordinator.device_name}: {value}")
+    
+    @property
+    def native_value(self) -> float:
+        """Return the current priority."""
+        return self.coordinator.device_config.get(CONF_PRIORITY, 5)
+    
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the priority."""
+        self.coordinator.update_config(CONF_PRIORITY, int(value))
+        _LOGGER.info(f"Updated priority for {self.coordinator.device_name} to {int(value)}")
+        self.async_write_ha_state()
+
+
+class DeviceMinOnTimeNumber(CoordinatorEntity, NumberEntity, RestoreEntity):
+    """Minimum on time number for device."""
+    
+    _attr_has_entity_name = True
+    _attr_translation_key = "min_on_time"
+    
+    def __init__(self, coordinator: DeviceCoordinator) -> None:
+        """Initialize the number."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_min_on_time"
+        self._attr_native_min_value = 0
+        self._attr_native_max_value = 1440  # 24 hours in minutes
+        self._attr_native_step = 1
+        self._attr_native_unit_of_measurement = "min"
+        
+        # Link to device
+        device_name = coordinator.device_name
+        device_type = coordinator.device_config.get(CONF_TYPE, "Unknown")
+        normalized_name = normalize_device_name(device_name)
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
+        }
+    
+    async def async_added_to_hass(self) -> None:
+        """Restore state on startup."""
+        await super().async_added_to_hass()
+        state = await self.async_get_last_state()
+        if state and state.state not in ("unknown", "unavailable"):
+            value = int(float(state.state))
+            self.coordinator.update_config(CONF_MIN_ON_TIME, value)
+            _LOGGER.debug(f"Restored min on time for {self.coordinator.device_name}: {value}")
+    
+    @property
+    def native_value(self) -> float:
+        """Return the current min on time."""
+        return self.coordinator.device_config.get(CONF_MIN_ON_TIME, 0)
+    
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the min on time."""
+        self.coordinator.update_config(CONF_MIN_ON_TIME, int(value))
+        _LOGGER.info(f"Updated min on time for {self.coordinator.device_name} to {int(value)} min")
+        self.async_write_ha_state()
+
+
+class DeviceMinOffTimeNumber(CoordinatorEntity, NumberEntity, RestoreEntity):
+    """Minimum off time number for device."""
+    
+    _attr_has_entity_name = True
+    _attr_translation_key = "min_off_time"
+    
+    def __init__(self, coordinator: DeviceCoordinator) -> None:
+        """Initialize the number."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_min_off_time"
+        self._attr_native_min_value = 0
+        self._attr_native_max_value = 1440  # 24 hours in minutes
+        self._attr_native_step = 1
+        self._attr_native_unit_of_measurement = "min"
+        
+        # Link to device
+        device_name = coordinator.device_name
+        device_type = coordinator.device_config.get(CONF_TYPE, "Unknown")
+        normalized_name = normalize_device_name(device_name)
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
+        }
+    
+    async def async_added_to_hass(self) -> None:
+        """Restore state on startup."""
+        await super().async_added_to_hass()
+        state = await self.async_get_last_state()
+        if state and state.state not in ("unknown", "unavailable"):
+            value = int(float(state.state))
+            self.coordinator.update_config(CONF_MIN_OFF_TIME, value)
+            _LOGGER.debug(f"Restored min off time for {self.coordinator.device_name}: {value}")
+    
+    @property
+    def native_value(self) -> float:
+        """Return the current min off time."""
+        return self.coordinator.device_config.get(CONF_MIN_OFF_TIME, 0)
+    
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the min off time."""
+        self.coordinator.update_config(CONF_MIN_OFF_TIME, int(value))
+        _LOGGER.info(f"Updated min off time for {self.coordinator.device_name} to {int(value)} min")
+        self.async_write_ha_state()
+
+
+class DeviceTargetNumber(CoordinatorEntity, NumberEntity):
+    """Target value number for numeric devices."""
+    
+    _attr_has_entity_name = True
+    _attr_translation_key = "target_value"
+    
+    def __init__(self, coordinator: DeviceCoordinator, target: Dict[str, Any]) -> None:
+        """Initialize the number."""
+        super().__init__(coordinator)
         self._target = target
-        self._device_name = device[CONF_NAME]
         self._numeric_entity_id = target[CONF_NUMERIC_ENTITY_ID]
         self._activated_value = target[CONF_ACTIVATED_VALUE]
         self._deactivated_value = target[CONF_DEACTIVATED_VALUE]
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{self._device_name}_{self._numeric_entity_id}"
-        self._attr_entity_registry_enabled_default = True
-        # Get device type for model
-        device_type = self._device.get("type", "Unknown")
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{self._numeric_entity_id}_target"
+        self._attr_native_min_value = min(self._activated_value, self._deactivated_value)
+        self._attr_native_max_value = max(self._activated_value, self._deactivated_value)
         
-        normalized_name = normalize_device_name(self._device_name)
+        # Link to device
+        device_name = coordinator.device_name
+        device_type = coordinator.device_config.get(CONF_TYPE, "Unknown")
+        normalized_name = normalize_device_name(device_name)
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
-            "name": f"PVO {self._device_name}",
-            "manufacturer": "PV Optimizer",
-            "model": f"{device_type.capitalize()} Device",
         }
-        # Set min/max based on activated/deactivated values
-        self._attr_min_value = min(self._activated_value, self._deactivated_value)
-        self._attr_max_value = max(self._activated_value, self._deactivated_value)
-
+    
     @property
     def native_value(self) -> float:
         """Return the current value."""
         state = self.hass.states.get(self._numeric_entity_id)
-        return float(state.state) if state else 0.0
-
+        return float(state.state) if state and state.state not in ['unknown', 'unavailable'] else 0.0
+    
     async def async_set_native_value(self, value: float) -> None:
         """Set the value."""
-        # This is for manual control; the coordinator handles optimization
-        # But we can allow manual override
         await self.hass.services.async_call(
             "number", "set_value",
             {"entity_id": self._numeric_entity_id, "value": value}
         )
-        # Force immediate state update in UI
         self.async_write_ha_state()
-        # Trigger immediate optimization cycle
-        await self.coordinator.async_request_refresh()
-
-
-class PVOptimizerPriorityNumber(CoordinatorEntity, NumberEntity, RestoreEntity):
-    """Dynamic config number for priority - dynamic config entity."""
-
-    _attr_has_entity_name = True
-    _attr_translation_key = "priority"
-
-    def __init__(self, coordinator: PVOptimizerCoordinator, device_name: str) -> None:
-        """Initialize the priority number."""
-        super().__init__(coordinator)
-        self._device_name = device_name
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_priority"
-        self._attr_entity_registry_enabled_default = True
-        self._attr_native_min_value = 1
-        self._attr_native_max_value = 10
-        self._attr_native_step = 1
-        # Get device type for model
-        device_type = "Unknown"
-        for device in coordinator.devices:
-            if device[CONF_NAME] == device_name:
-                device_type = device.get("type", "Unknown")
-                break
-        
-        normalized_name = normalize_device_name(device_name)
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
-            "name": f"PVO {device_name}",
-            "manufacturer": "PV Optimizer",
-            "model": f"{device_type.capitalize()} Device",
-        }
-
-    async def async_added_to_hass(self) -> None:
-        """Restore state on startup."""
-        await super().async_added_to_hass()
-        state = await self.async_get_last_state()
-        if state and state.state not in ("unknown", "unavailable"):
-            value = int(float(state.state))
-            # Restore state to coordinator memory
-            self.coordinator.update_device_config(self._device_name, CONF_PRIORITY, value)
-            _LOGGER.debug(f"Restored priority for {self._device_name}: {value}")
-
-    @property
-    def native_value(self) -> float:
-        """Return the current priority value."""
-        for device in self.coordinator.devices:
-            if device[CONF_NAME] == self._device_name:
-                return device.get(CONF_PRIORITY, 5)
-        return 5
-
-    async def async_set_native_value(self, value: float) -> None:
-        """Set the priority value."""
-        self.coordinator.update_device_config(self._device_name, CONF_PRIORITY, int(value))
-        _LOGGER.info(f"Updated priority for device {self._device_name} to {int(value)}")
-        
-        # Force immediate state update in UI
-        self.async_write_ha_state()
-        # Trigger immediate optimization cycle
-        await self.coordinator.async_request_refresh()
-
-
-class PVOptimizerMinOnTimeNumber(CoordinatorEntity, NumberEntity, RestoreEntity):
-    """Dynamic config number for minimum on time - dynamic config entity."""
-
-    _attr_has_entity_name = True
-    _attr_translation_key = "min_on_time"
-
-    def __init__(self, coordinator: PVOptimizerCoordinator, device_name: str) -> None:
-        """Initialize the min on time number."""
-        super().__init__(coordinator)
-        self._device_name = device_name
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_min_on_time"
-        self._attr_entity_registry_enabled_default = True
-        self._attr_min_value = 0
-        self._attr_max_value = 1440  # 24 hours in minutes
-        self._attr_step = 1
-        self._attr_unit_of_measurement = "min"
-        # Get device type for model
-        device_type = "Unknown"
-        for device in coordinator.devices:
-            if device[CONF_NAME] == device_name:
-                device_type = device.get("type", "Unknown")
-                break
-        
-        normalized_name = normalize_device_name(device_name)
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
-            "name": f"PVO {device_name}",
-            "manufacturer": "PV Optimizer",
-            "model": f"{device_type.capitalize()} Device",
-        }
-
-    async def async_added_to_hass(self) -> None:
-        """Restore state on startup."""
-        await super().async_added_to_hass()
-        state = await self.async_get_last_state()
-        if state and state.state not in ("unknown", "unavailable"):
-            value = int(float(state.state))
-            # Restore state to coordinator memory
-            self.coordinator.update_device_config(self._device_name, CONF_MIN_ON_TIME, value)
-            _LOGGER.debug(f"Restored min on time for {self._device_name}: {value}")
-
-    @property
-    def native_value(self) -> float:
-        """Return the current min on time value."""
-        for device in self.coordinator.devices:
-            if device[CONF_NAME] == self._device_name:
-                return device.get(CONF_MIN_ON_TIME, 0)
-        return 0
-
-    async def async_set_native_value(self, value: float) -> None:
-        """Set the min on time value."""
-        self.coordinator.update_device_config(self._device_name, CONF_MIN_ON_TIME, int(value))
-        _LOGGER.info(f"Updated min on time for device {self._device_name} to {int(value)} min")
-        
-        # Force immediate state update in UI
-        self.async_write_ha_state()
-        # Trigger immediate optimization cycle
-        await self.coordinator.async_request_refresh()
-
-
-class PVOptimizerMinOffTimeNumber(CoordinatorEntity, NumberEntity, RestoreEntity):
-    """Dynamic config number for minimum off time - dynamic config entity."""
-
-    _attr_has_entity_name = True
-    _attr_translation_key = "min_off_time"
-
-    def __init__(self, coordinator: PVOptimizerCoordinator, device_name: str) -> None:
-        """Initialize the min off time number."""
-        super().__init__(coordinator)
-        self._device_name = device_name
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{device_name}_min_off_time"
-        self._attr_entity_registry_enabled_default = True
-        self._attr_min_value = 0
-        self._attr_max_value = 1440  # 24 hours in minutes
-        self._attr_step = 1
-        self._attr_unit_of_measurement = "min"
-        # Get device type for model
-        device_type = "Unknown"
-        for device in coordinator.devices:
-            if device[CONF_NAME] == device_name:
-                device_type = device.get("type", "Unknown")
-                break
-        
-        normalized_name = normalize_device_name(device_name)
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
-            "name": f"PVO {device_name}",
-            "manufacturer": "PV Optimizer",
-            "model": f"{device_type.capitalize()} Device",
-        }
-
-    async def async_added_to_hass(self) -> None:
-        """Restore state on startup."""
-        await super().async_added_to_hass()
-        state = await self.async_get_last_state()
-        if state and state.state not in ("unknown", "unavailable"):
-            value = int(float(state.state))
-            # Restore state to coordinator memory
-            self.coordinator.update_device_config(self._device_name, CONF_MIN_OFF_TIME, value)
-            _LOGGER.debug(f"Restored min off time for {self._device_name}: {value}")
-
-    @property
-    def native_value(self) -> float:
-        """Return the current min off time value."""
-        for device in self.coordinator.devices:
-            if device[CONF_NAME] == self._device_name:
-                return device.get(CONF_MIN_OFF_TIME, 0)
-        return 0
-
-    async def async_set_native_value(self, value: float) -> None:
-        """Set the min off time value."""
-        self.coordinator.update_device_config(self._device_name, CONF_MIN_OFF_TIME, int(value))
-        _LOGGER.info(f"Updated min off time for device {self._device_name} to {int(value)} min")
-        
-        # Force immediate state update in UI
-        self.async_write_ha_state()
-        # Trigger immediate optimization cycle
-        await self.coordinator.async_request_refresh()
