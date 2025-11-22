@@ -70,12 +70,21 @@ async def _async_setup_device_sensors(
 ) -> None:
     """Set up device sensors."""
     coordinator: DeviceCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    device_config = config_entry.data.get("device_config", {})
+    device_type = device_config.get("type")
     
     entities = [
         DeviceLockedSensor(coordinator),
         DevicePowerSensor(coordinator),
         DeviceTargetStateSensor(coordinator),
+        DeviceConfigurationSensor(coordinator),  # NEW: Configuration summary
     ]
+    
+    # Add numeric target sensors for numeric devices
+    if device_type == "numeric":
+        targets = device_config.get("numeric_targets", [])
+        for i, target in enumerate(targets):
+            entities.append(DeviceNumericTargetSensor(coordinator, i, target))
     
     async_add_entities(entities)
 
@@ -309,3 +318,122 @@ class DeviceTargetStateSensor(CoordinatorEntity, SensorEntity):
         elif value == "Off":
             return "mdi:power-plug-off"
         return "mdi:help-circle"
+
+
+class DeviceConfigurationSensor(CoordinatorEntity, SensorEntity):
+    """Device configuration summary sensor."""
+    
+    _attr_has_entity_name = True
+    _attr_translation_key = "configuration"
+    _attr_entity_category = "diagnostic"
+    
+    def __init__(self, coordinator: DeviceCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_configuration"
+        
+        # Link to device
+        device_name = coordinator.device_name
+        normalized_name = normalize_device_name(device_name)
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
+        }
+    
+    @property
+    def native_value(self) -> str:
+        """Return configuration summary."""
+        config = self.coordinator.device_config
+        device_type = config.get("type", "unknown")
+        
+        if device_type == "switch":
+            entity = config.get("switch_entity_id", "N/A")
+            invert = "Yes" if config.get("invert_switch", False) else "No"
+            return f"Type: Switch | Entity: {entity} | Invert: {invert}"
+        elif device_type == "numeric":
+            target_count = len(config.get("numeric_targets", []))
+            return f"Type: Numeric | Targets: {target_count}"
+        return f"Type: {device_type}"
+    
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional configuration details."""
+        config = self.coordinator.device_config
+        attrs = {
+            "device_type": config.get("type"),
+            "priority": config.get("priority"),
+            "nominal_power": config.get("power"),
+            "min_on_time": config.get("min_on_time", 0),
+            "min_off_time": config.get("min_off_time", 0),
+            "optimization_enabled": config.get("optimization_enabled", True),
+            "simulation_active": config.get("simulation_active", False),
+        }
+        
+        # Add type-specific attributes
+        if config.get("type") == "switch":
+            attrs["switch_entity_id"] = config.get("switch_entity_id")
+            attrs["invert_switch"] = config.get("invert_switch", False)
+        elif config.get("type") == "numeric":
+            targets = config.get("numeric_targets", [])
+            attrs["numeric_targets_count"] = len(targets)
+            for i, target in enumerate(targets):
+                attrs[f"target_{i+1}_entity"] = target.get("numeric_entity_id")
+                attrs[f"target_{i+1}_on_value"] = target.get("activated_value")
+                attrs[f"target_{i+1}_off_value"] = target.get("deactivated_value")
+        
+        if config.get("measured_power_entity_id"):
+            attrs["power_sensor"] = config.get("measured_power_entity_id")
+            attrs["power_threshold"] = config.get("power_threshold", 100)
+        
+        return attrs
+    
+    @property
+    def icon(self) -> str:
+        """Return the icon."""
+        return "mdi:cog"
+
+
+class DeviceNumericTargetSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing a specific numeric target configuration."""
+    
+    _attr_has_entity_name = True
+    _attr_entity_category = "diagnostic"
+    
+    def __init__(self, coordinator: DeviceCoordinator, target_index: int, target: dict) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._target_index = target_index
+        self._target = target
+        entity_id = target.get("numeric_entity_id", "").split(".")[-1]
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_target_{target_index}_{entity_id}"
+        self._attr_name = f"Target {target_index + 1}"
+        
+        # Link to device
+        device_name = coordinator.device_name
+        normalized_name = normalize_device_name(device_name)
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
+        }
+    
+    @property
+    def native_value(self) -> str:
+        """Return target configuration."""
+        entity = self._target.get("numeric_entity_id", "N/A")
+        entity_name = entity.split(".")[-1]
+        on_val = self._target.get("activated_value")
+        off_val = self._target.get("deactivated_value")
+        return f"{entity_name}: {off_val} → {on_val}"
+    
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return target details."""
+        return {
+            "entity_id": self._target.get("numeric_entity_id"),
+            "activated_value": self._target.get("activated_value"),
+            "deactivated_value": self._target.get("deactivated_value"),
+            "target_number": self._target_index + 1,
+        }
+    
+    @property
+    def icon(self) -> str:
+        """Return the icon."""
+        return "mdi:target"

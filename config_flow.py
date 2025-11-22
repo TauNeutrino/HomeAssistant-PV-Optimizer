@@ -236,29 +236,54 @@ class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_numeric_targets(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Configure numeric targets for numeric devices."""
+        # Initialize targets list if needed
+        if not hasattr(self, '_numeric_targets'):
+            self._numeric_targets = []
+        
         if user_input is not None:
-            # Add targets to device config
-            device_config = self._device_base_config
-            device_config[CONF_NUMERIC_TARGETS] = [
-                {
+            # Check if user wants to add a target or finish
+            if user_input.get("action") == "add_target":
+                # Add the target to the list
+                self._numeric_targets.append({
                     CONF_NUMERIC_ENTITY_ID: user_input[CONF_NUMERIC_ENTITY_ID],
                     CONF_ACTIVATED_VALUE: user_input[CONF_ACTIVATED_VALUE],
                     CONF_DEACTIVATED_VALUE: user_input[CONF_DEACTIVATED_VALUE],
-                }
-            ]
+                })
+                # Show the form again to add another target
+                return await self.async_step_numeric_targets()
             
-            # Create numeric device entry
-            return self.async_create_entry(
-                title=f"PVO {device_config[CONF_NAME]}",
-                data={
-                    "entry_type": "device",
-                    "device_config": device_config,
-                },
-            )
+            elif user_input.get("action") == "finish" or len(self._numeric_targets) == 0:
+                # If finishing and we have at least one target already, or this is the first target
+                if CONF_NUMERIC_ENTITY_ID in user_input:
+                    # Add the current target
+                    self._numeric_targets.append({
+                        CONF_NUMERIC_ENTITY_ID: user_input[CONF_NUMERIC_ENTITY_ID],
+                        CONF_ACTIVATED_VALUE: user_input[CONF_ACTIVATED_VALUE],
+                        CONF_DEACTIVATED_VALUE: user_input[CONF_DEACTIVATED_VALUE],
+                    })
+                
+                # Create device entry
+                device_config = self._device_base_config
+                device_config[CONF_NUMERIC_TARGETS] = self._numeric_targets
+                
+                # Clean up instance variables
+                self._numeric_targets = []
+                
+                return self.async_create_entry(
+                    title=f"PVO {device_config[CONF_NAME]}",
+                    data={
+                        "entry_type": "device",
+                        "device_config": device_config,
+                    },
+                )
 
+        # Build schema
+        target_count = len(self._numeric_targets)
+        description = f"Configure numeric target #{target_count + 1}" if target_count > 0 else "Configure the first numeric target"
+        
         schema = vol.Schema({
             vol.Required(CONF_NUMERIC_ENTITY_ID): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="number"),
+                selector.EntitySelectorConfig(domain=["number", "input_number"]),
             ),
             vol.Required(CONF_ACTIVATED_VALUE): selector.NumberSelector(
                 selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX),
@@ -267,12 +292,30 @@ class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX),
             ),
         })
+        
+        # Add action buttons if we already have at least one target
+        if target_count > 0:
+            schema = schema.extend({
+                vol.Required("action", default="finish"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=[
+                        selector.SelectOptionDict(value="finish", label="✅ Finish (Create Device)"),
+                        selector.SelectOptionDict(value="add_target", label="➕ Add Another Target"),
+                    ]),
+                ),
+            })
+
+        targets_summary = ""
+        if target_count > 0:
+            targets_summary = f"\n\n**Targets added so far: {target_count}**"
+            for i, target in enumerate(self._numeric_targets, 1):
+                entity_id = target[CONF_NUMERIC_ENTITY_ID].split('.')[-1]
+                targets_summary += f"\n{i}. {entity_id}: {target[CONF_DEACTIVATED_VALUE]} → {target[CONF_ACTIVATED_VALUE]}"
 
         return self.async_show_form(
             step_id="numeric_targets",
             data_schema=schema,
             description_placeholders={
-                "info": "Configure the numeric target for this device."
+                "info": description + targets_summary
             }
         )
 
