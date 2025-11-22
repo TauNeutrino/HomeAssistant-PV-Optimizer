@@ -112,7 +112,7 @@ class DeviceOptimizationSwitch(CoordinatorEntity, SwitchEntity, RestoreEntity):
     """Optimization enabled switch for device."""
     
     _attr_has_entity_name = True
-   _attr_translation_key = "optimization_enabled"
+    _attr_translation_key = "optimization_enabled"
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the switch."""
