@@ -158,8 +158,9 @@ async def _async_setup_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> 
     # Initial refresh
     await coordinator.async_refresh()
     
-    # Register update listener
-    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    # Don't register reload listener for device entries
+    # Device config changes are handled in-memory by the coordinator
+    # Only service entries need to reload on config changes
     
     _LOGGER.info(f"PV Optimizer Device setup complete: {device_name}")
     return True

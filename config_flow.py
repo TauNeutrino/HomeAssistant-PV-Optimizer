@@ -403,7 +403,18 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
                 CONF_POWER_THRESHOLD: user_input.get(CONF_POWER_THRESHOLD, 100),
             })
             new_data["device_config"] = device_config
-            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+            
+            # Update entry data without triggering reload
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, 
+                data=new_data,
+            )
+            
+            # Update the coordinator's device_config directly
+            coordinator = self.hass.data[DOMAIN].get(self.config_entry.entry_id)
+            if coordinator:
+                coordinator.device_config = device_config
+            
             return self.async_create_entry(title="", data={})
 
         # Get current device config
