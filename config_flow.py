@@ -241,28 +241,22 @@ class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._numeric_targets = []
         
         if user_input is not None:
-            # Check if user wants to add a target or finish
-            if user_input.get("action") == "add_target":
-                # Add the target to the list
+            # Always add the current target if it has the required fields
+            if CONF_NUMERIC_ENTITY_ID in user_input:
                 self._numeric_targets.append({
                     CONF_NUMERIC_ENTITY_ID: user_input[CONF_NUMERIC_ENTITY_ID],
                     CONF_ACTIVATED_VALUE: user_input[CONF_ACTIVATED_VALUE],
                     CONF_DEACTIVATED_VALUE: user_input[CONF_DEACTIVATED_VALUE],
                 })
+            
+            # Check if user wants to add another or finish
+            action = user_input.get("action", "finish")
+            
+            if action == "add_target":
                 # Show the form again to add another target
                 return await self.async_step_numeric_targets()
-            
-            elif user_input.get("action") == "finish" or len(self._numeric_targets) == 0:
-                # If finishing and we have at least one target already, or this is the first target
-                if CONF_NUMERIC_ENTITY_ID in user_input:
-                    # Add the current target
-                    self._numeric_targets.append({
-                        CONF_NUMERIC_ENTITY_ID: user_input[CONF_NUMERIC_ENTITY_ID],
-                        CONF_ACTIVATED_VALUE: user_input[CONF_ACTIVATED_VALUE],
-                        CONF_DEACTIVATED_VALUE: user_input[CONF_DEACTIVATED_VALUE],
-                    })
-                
-                # Create device entry
+            else:
+                # Finish - create device entry
                 device_config = self._device_base_config
                 device_config[CONF_NUMERIC_TARGETS] = self._numeric_targets
                 
@@ -279,7 +273,6 @@ class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Build schema
         target_count = len(self._numeric_targets)
-        description = f"Configure numeric target #{target_count + 1}" if target_count > 0 else "Configure the first numeric target"
         
         schema = vol.Schema({
             vol.Required(CONF_NUMERIC_ENTITY_ID): selector.EntitySelector(
@@ -293,19 +286,22 @@ class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
         })
         
-        # Add action buttons if we already have at least one target
-        if target_count > 0:
-            schema = schema.extend({
-                vol.Required("action", default="finish"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(options=[
-                        selector.SelectOptionDict(value="finish", label="✅ Finish (Create Device)"),
-                        selector.SelectOptionDict(value="add_target", label="➕ Add Another Target"),
-                    ]),
-                ),
-            })
+        # Add action selector ALWAYS (user can choose to finish after first target or add more)
+        schema = schema.extend({
+            vol.Required("action", default="finish"): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=[
+                    selector.SelectOptionDict(value="finish", label="✅ Finish (Create Device)"),
+                    selector.SelectOptionDict(value="add_target", label="➕ Add Another Target"),
+                ]),
+            ),
+        })
 
-        targets_summary = ""
-        if target_count > 0:
+        # Build description
+        if target_count == 0:
+            description = "Configure the first numeric target"
+            targets_summary = ""
+        else:
+            description = f"Configure numeric target #{target_count + 1}"
             targets_summary = f"\n\n**Targets added so far: {target_count}**"
             for i, target in enumerate(self._numeric_targets, 1):
                 entity_id = target[CONF_NUMERIC_ENTITY_ID].split('.')[-1]
@@ -403,6 +399,8 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
                 CONF_SIMULATION_ACTIVE: user_input.get(CONF_SIMULATION_ACTIVE, False),
                 CONF_MIN_ON_TIME: user_input.get(CONF_MIN_ON_TIME, 0),
                 CONF_MIN_OFF_TIME: user_input.get(CONF_MIN_OFF_TIME, 0),
+                CONF_MEASURED_POWER_ENTITY_ID: user_input.get(CONF_MEASURED_POWER_ENTITY_ID),
+                CONF_POWER_THRESHOLD: user_input.get(CONF_POWER_THRESHOLD, 100),
             })
             new_data["device_config"] = device_config
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
@@ -421,6 +419,23 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
             vol.Required(
                 CONF_POWER,
                 default=device_config.get(CONF_POWER, 0)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, 
+                    step=0.1, 
+                    unit_of_measurement="W",
+                    mode=selector.NumberSelectorMode.BOX
+                ),
+            ),
+            vol.Optional(
+                CONF_MEASURED_POWER_ENTITY_ID,
+                default=device_config.get(CONF_MEASURED_POWER_ENTITY_ID)
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", device_class="power"),
+            ),
+            vol.Optional(
+                CONF_POWER_THRESHOLD,
+                default=device_config.get(CONF_POWER_THRESHOLD, 100)
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=0, 
@@ -460,10 +475,18 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
         })
 
         device_name = device_config.get(CONF_NAME, "Device")
+        device_type = device_config.get(CONF_TYPE, "unknown")
+        
+        # Add note about numeric targets  
+        info = f"Configure options for {device_name}."
+        if device_type == "numeric":
+            targets = device_config.get(CONF_NUMERIC_TARGETS, [])
+            info += f"\n\nNote: This device has {len(targets)} numeric target(s). To edit targets, you need to delete and recreate the device."
+        
         return self.async_show_form(
             step_id="device_config",
             data_schema=schema,
             description_placeholders={
-                "info": f"Configure options for {device_name}."
+                "info": info
             }
         )
