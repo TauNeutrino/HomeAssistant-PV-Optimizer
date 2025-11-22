@@ -125,9 +125,9 @@ class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_device_type(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Let user choose device type (Switch or Numeric)."""
         if user_input is not None:
-            device_type = user_input[CONF_TYPE]
-            # Store type and move to device configuration
-            return await self.async_step_device_config(device_type=device_type)
+            # Store device type for use in next step
+            self._device_type = user_input[CONF_TYPE]
+            return await self.async_step_device_config()
 
         schema = vol.Schema({
             vol.Required(CONF_TYPE): selector.SelectSelector(
@@ -146,11 +146,10 @@ class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
 
-    async def async_step_device_config(self, user_input: Optional[Dict[str, Any]] = None, device_type: str = None) -> FlowResult:
+    async def async_step_device_config(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Configure device based on type."""
-        # Get device type from flow or parameter
-        if device_type is None:
-            device_type = self._device_base_config.get(CONF_TYPE) if self._device_base_config else TYPE_SWITCH
+        # Get device type from instance variable
+        device_type = getattr(self, '_device_type', TYPE_SWITCH)
         
         if user_input is not None:
             device_config = {
