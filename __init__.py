@@ -131,20 +131,10 @@ async def _async_setup_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> 
     else:
         _LOGGER.warning(f"Service coordinator not found when setting up device: {device_name}")
     
-    # Setup platforms based on device type
-    device_type = device_config.get("type")
-    platforms = ["sensor"]  # All devices have sensors
-    
-    if device_type == "switch":
-        platforms.extend(["switch", "number"])
-    elif device_type == "numeric":
-        platforms.extend(["number"])
-    
-    await hass.config_entries.async_forward_entry_setups(entry, platforms)
-    
-    # Create device in device registry
+    # Create device in device registry FIRST (before platforms)
     from .const import normalize_device_name
     
+    device_type = device_config.get("type")
     normalized_name = normalize_device_name(device_name)
     device_reg = dr.async_get(hass)
     device_reg.async_get_or_create(
@@ -154,6 +144,16 @@ async def _async_setup_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> 
         manufacturer="PV Optimizer",
         model=f"{device_type.capitalize()} Device" if device_type else "Unknown Device",
     )
+    
+    # Setup platforms based on device type (AFTER device exists)
+    platforms = ["sensor"]  # All devices have sensors
+    
+    if device_type == "switch":
+        platforms.extend(["switch", "number"])
+    elif device_type == "numeric":
+        platforms.extend(["number"])
+    
+    await hass.config_entries.async_forward_entry_setups(entry, platforms)
     
     # Initial refresh
     await coordinator.async_refresh()

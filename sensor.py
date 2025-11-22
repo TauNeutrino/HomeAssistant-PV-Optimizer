@@ -14,6 +14,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity import EntityCategory
 
 from .const import (
     DOMAIN,
@@ -325,7 +326,7 @@ class DeviceConfigurationSensor(CoordinatorEntity, SensorEntity):
     
     _attr_has_entity_name = True
     _attr_translation_key = "configuration"
-    _attr_entity_category = "diagnostic"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the sensor."""
@@ -396,7 +397,7 @@ class DeviceNumericTargetSensor(CoordinatorEntity, SensorEntity):
     """Sensor showing a specific numeric target configuration."""
     
     _attr_has_entity_name = True
-    _attr_entity_category = "diagnostic"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     
     def __init__(self, coordinator: DeviceCoordinator, target_index: int, target: dict) -> None:
         """Initialize the sensor."""
