@@ -100,8 +100,8 @@ class DeviceCoordinator(DataUpdateCoordinator):
         self.device_state: Dict[str, Any] = {}
         self.state_changes: Dict[str, datetime] = {}
         
-        # Service coordinator reference
- (set during registration)
+        
+        # Service coordinator reference (set during registration)
         self.service_coordinator: Optional["ServiceCoordinator"] = None
 
     async def _async_update_data(self) -> Dict[str, Any]:
