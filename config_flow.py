@@ -427,12 +427,28 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
                     mode=selector.NumberSelectorMode.BOX
                 ),
             ),
-            vol.Optional(
-                CONF_MEASURED_POWER_ENTITY_ID,
-                default=device_config.get(CONF_MEASURED_POWER_ENTITY_ID)
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor", device_class="power"),
-            ),
+        })
+        
+        # Add optional power sensor field (only set default if value exists)
+        power_sensor = device_config.get(CONF_MEASURED_POWER_ENTITY_ID)
+        if power_sensor:
+            schema = schema.extend({
+                vol.Optional(
+                    CONF_MEASURED_POWER_ENTITY_ID,
+                    default=power_sensor
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor", device_class="power"),
+                ),
+            })
+        else:
+            schema = schema.extend({
+                vol.Optional(CONF_MEASURED_POWER_ENTITY_ID): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor", device_class="power"),
+                ),
+            })
+        
+        # Continue with other optional fields
+        schema = schema.extend({
             vol.Optional(
                 CONF_POWER_THRESHOLD,
                 default=device_config.get(CONF_POWER_THRESHOLD, 100)
