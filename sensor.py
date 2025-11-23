@@ -71,21 +71,13 @@ async def _async_setup_device_sensors(
 ) -> None:
     """Set up device sensors."""
     coordinator: DeviceCoordinator = hass.data[DOMAIN][config_entry.entry_id]
-    device_config = config_entry.data.get("device_config", {})
-    device_type = device_config.get("type")
     
     entities = [
         DeviceLockedSensor(coordinator),
         DevicePowerSensor(coordinator),
         DeviceTargetStateSensor(coordinator),
-        DeviceConfigurationSensor(coordinator),  # NEW: Configuration summary
+        DeviceConfigurationSensor(coordinator),  # Shows all config including targets
     ]
-    
-    # Add numeric target sensors for numeric devices
-    if device_type == "numeric":
-        targets = device_config.get("numeric_targets", [])
-        for i, target in enumerate(targets):
-            entities.append(DeviceNumericTargetSensor(coordinator, i, target))
     
     async_add_entities(entities)
 
@@ -391,50 +383,3 @@ class DeviceConfigurationSensor(CoordinatorEntity, SensorEntity):
     def icon(self) -> str:
         """Return the icon."""
         return "mdi:cog"
-
-
-class DeviceNumericTargetSensor(CoordinatorEntity, SensorEntity):
-    """Sensor showing a specific numeric target configuration."""
-    
-    _attr_has_entity_name = True
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    
-    def __init__(self, coordinator: DeviceCoordinator, target_index: int, target: dict) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._target_index = target_index
-        self._target = target
-        entity_id = target.get("numeric_entity_id", "").split(".")[-1]
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_target_{target_index}_{entity_id}"
-        self._attr_name = f"Target {target_index + 1}"
-        
-        # Link to device
-        device_name = coordinator.device_name
-        normalized_name = normalize_device_name(device_name)
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
-        }
-    
-    @property
-    def native_value(self) -> str:
-        """Return target configuration."""
-        entity = self._target.get("numeric_entity_id", "N/A")
-        entity_name = entity.split(".")[-1]
-        on_val = self._target.get("activated_value")
-        off_val = self._target.get("deactivated_value")
-        return f"{entity_name}: {off_val} → {on_val}"
-    
-    @property
-    def extra_state_attributes(self) -> dict:
-        """Return target details."""
-        return {
-            "entity_id": self._target.get("numeric_entity_id"),
-            "activated_value": self._target.get("activated_value"),
-            "deactivated_value": self._target.get("deactivated_value"),
-            "target_number": self._target_index + 1,
-        }
-    
-    @property
-    def icon(self) -> str:
-        """Return the icon."""
-        return "mdi:target"
