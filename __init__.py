@@ -146,12 +146,12 @@ async def _async_setup_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> 
     )
     
     # Setup platforms based on device type (AFTER device exists)
-    platforms = ["sensor"]  # All devices have sensors
+    platforms = ["sensor", "switch"]  # All devices have sensors and switches
     
     if device_type == "switch":
-        platforms.extend(["switch", "number"])
+        platforms.append("number")  # Switch devices also have number controls
     elif device_type == "numeric":
-        platforms.extend(["number"])
+        platforms.append("number")  # Numeric devices also have number controls
     
     await hass.config_entries.async_forward_entry_setups(entry, platforms)
     

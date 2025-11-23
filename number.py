@@ -56,11 +56,8 @@ async def async_setup_entry(
     entities.append(DeviceMinOnTimeNumber(coordinator))
     entities.append(DeviceMinOffTimeNumber(coordinator))
     
-    # Numeric target numbers (numeric devices only)
-    if device_type == TYPE_NUMERIC:
-        targets = device_config.get(CONF_NUMERIC_TARGETS, [])
-        for target in targets:
-            entities.append(DeviceTargetNumber(coordinator, target))
+    # Note: Numeric devices do NOT need target number entities here
+    # They control external number entities defined in numeric_targets config
     
     async_add_entities(entities)
 
