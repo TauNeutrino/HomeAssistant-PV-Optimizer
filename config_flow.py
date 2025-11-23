@@ -337,8 +337,44 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
             # Service entry → only global config options
             return await self.async_step_global_config(user_input)
         else:
-            # Device entry → device config options
-            return await self.async_step_device_config(user_input)
+            # Device entry → check if numeric device
+            device_config = self.config_entry.data.get("device_config", {})
+            device_type = device_config.get("type")
+            
+            if device_type == "numeric":
+                # Numeric device → show menu
+                return await self.async_step_device_menu(user_input)
+            else:
+                # Switch device → direct to config
+                return await self.async_step_device_config(user_input)
+    
+    async def async_step_device_menu(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Show options menu for numeric devices."""
+        if user_input is not None:
+            if user_input["menu_option"] == "device_config":
+                return await self.async_step_device_config()
+            elif user_input["menu_option"] == "manage_targets":
+                return await self.async_step_manage_targets()
+        
+        schema = vol.Schema({
+            vol.Required("menu_option"): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=[
+                    selector.SelectOptionDict(value="device_config", label="Basic Configuration"),
+                    selector.SelectOptionDict(value="manage_targets", label="Manage Numeric Targets"),
+                ]),
+            ),
+        })
+        
+        device_config = self.config_entry.data.get("device_config", {})
+        device_name = device_config.get("name", "Device")
+        
+        return self.async_show_form(
+            step_id="device_menu",
+            data_schema=schema,
+            description_placeholders={
+                "info": f"Configure {device_name}"
+            }
+        )
 
     async def async_step_global_config(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Handle global configuration options."""
@@ -502,18 +538,194 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
         })
 
         device_name = device_config.get(CONF_NAME, "Device")
-        device_type = device_config.get(CONF_TYPE, "unknown")
-        
-        # Add note about numeric targets  
-        info = f"Configure options for {device_name}."
-        if device_type == "numeric":
-            targets = device_config.get(CONF_NUMERIC_TARGETS, [])
-            info += f"\n\nNote: This device has {len(targets)} numeric target(s). To edit targets, you need to delete and recreate the device."
         
         return self.async_show_form(
             step_id="device_config",
             data_schema=schema,
             description_placeholders={
-                "info": info
+                "info": f"Configure basic options for {device_name}"
             }
         )
+    
+    # =========================================================================
+    # NUMERIC TARGETS MANAGEMENT (Options Flow)
+    # =========================================================================
+    
+    async def async_step_manage_targets(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Manage numeric targets for existing numeric device."""
+        if user_input is not None:
+            action = user_input["action"]
+            if action == "add":
+                return await self.async_step_add_target()
+            elif action.startswith("edit_"):
+                index = int(action.split("_")[1])
+                self._editing_target_index = index
+                return await self.async_step_edit_target()
+            elif action.startswith("delete_"):
+                index = int(action.split("_")[1])
+                return await self.async_step_confirm_delete_target(index)
+            elif action == "done":
+                return self.async_create_entry(title="", data={})
+        
+        # Get current targets
+        device_config = self.config_entry.data.get("device_config", {})
+        targets = device_config.get(CONF_NUMERIC_TARGETS, [])
+        
+        # Build action options
+        options = []
+        for i, target in enumerate(targets):
+            entity_id = target[CONF_NUMERIC_ENTITY_ID].split('.')[-1]
+            on_val = target[CONF_ACTIVATED_VALUE]
+            off_val = target[CONF_DEACTIVATED_VALUE]
+            options.append(selector.SelectOptionDict(
+                value=f"edit_{i}",
+                label=f"✏️ Edit: {entity_id} ({off_val}→{on_val})"
+            ))
+            options.append(selector.SelectOptionDict(
+                value=f"delete_{i}",
+                label=f"🗑️ Delete: {entity_id}"
+            ))
+        
+        options.insert(0, selector.SelectOptionDict(value="add", label="➕ Add New Target"))
+        options.append(selector.SelectOptionDict(value="done", label="✅ Done"))
+        
+        schema = vol.Schema({
+            vol.Required("action"): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=options),
+            ),
+        })
+        
+        return self.async_show_form(
+            step_id="manage_targets",
+            data_schema=schema,
+            description_placeholders={
+                "info": f"Manage numeric targets ({len(targets)} configured)"
+            }
+        )
+    
+    async def async_step_add_target(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Add a new numeric target."""
+        if user_input is not None:
+            # Add target to config
+            new_data = dict(self.config_entry.data)
+            device_config = dict(new_data.get("device_config", {}))
+            targets = list(device_config.get(CONF_NUMERIC_TARGETS, []))
+            targets.append({
+                CONF_NUMERIC_ENTITY_ID: user_input[CONF_NUMERIC_ENTITY_ID],
+                CONF_ACTIVATED_VALUE: user_input[CONF_ACTIVATED_VALUE],
+                CONF_DEACTIVATED_VALUE: user_input[CONF_DEACTIVATED_VALUE],
+            })
+            device_config[CONF_NUMERIC_TARGETS] = targets
+            new_data["device_config"] = device_config
+            
+            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+            
+            # Update coordinator
+            coordinator = self.hass.data[DOMAIN].get(self.config_entry.entry_id)
+            if coordinator:
+                coordinator.device_config = device_config
+            
+            return await self.async_step_manage_targets()
+        
+        schema = vol.Schema({
+            vol.Required(CONF_NUMERIC_ENTITY_ID): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=["number", "input_number"]),
+            ),
+            vol.Required(CONF_ACTIVATED_VALUE): selector.NumberSelector(
+                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX),
+            ),
+            vol.Required(CONF_DEACTIVATED_VALUE): selector.NumberSelector(
+                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX),
+            ),
+        })
+        
+        return self.async_show_form(
+            step_id="add_target",
+            data_schema=schema,
+            description_placeholders={
+                "info": "Add a new numeric target"
+            }
+        )
+    
+    async def async_step_edit_target(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Edit an existing numeric target."""
+        index = getattr(self, '_editing_target_index', 0)
+        device_config = self.config_entry.data.get("device_config", {})
+        targets = device_config.get(CONF_NUMERIC_TARGETS, [])
+        
+        if index >= len(targets):
+            return await self.async_step_manage_targets()
+        
+        if user_input is not None:
+            # Update target
+            new_data = dict(self.config_entry.data)
+            device_config = dict(new_data.get("device_config", {}))
+            targets = list(device_config.get(CONF_NUMERIC_TARGETS, []))
+            targets[index] = {
+                CONF_NUMERIC_ENTITY_ID: user_input[CONF_NUMERIC_ENTITY_ID],
+                CONF_ACTIVATED_VALUE: user_input[CONF_ACTIVATED_VALUE],
+                CONF_DEACTIVATED_VALUE: user_input[CONF_DEACTIVATED_VALUE],
+            }
+            device_config[CONF_NUMERIC_TARGETS] = targets
+            new_data["device_config"] = device_config
+            
+            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+            
+            # Update coordinator
+            coordinator = self.hass.data[DOMAIN].get(self.config_entry.entry_id)
+            if coordinator:
+                coordinator.device_config = device_config
+            
+            return await self.async_step_manage_targets()
+        
+        target = targets[index]
+        schema = vol.Schema({
+            vol.Required(
+                CONF_NUMERIC_ENTITY_ID,
+                default=target[CONF_NUMERIC_ENTITY_ID]
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=["number", "input_number"]),
+            ),
+            vol.Required(
+                CONF_ACTIVATED_VALUE,
+                default=target[CONF_ACTIVATED_VALUE]
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX),
+            ),
+            vol.Required(
+                CONF_DEACTIVATED_VALUE,
+                default=target[CONF_DEACTIVATED_VALUE]
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX),
+            ),
+        })
+        
+        entity_name = target[CONF_NUMERIC_ENTITY_ID].split('.')[-1]
+        return self.async_show_form(
+            step_id="edit_target",
+            data_schema=schema,
+            description_placeholders={
+                "info": f"Edit target: {entity_name}"
+            }
+        )
+    
+    async def async_step_confirm_delete_target(self, index: int) -> FlowResult:
+        """Confirm deletion of a target."""
+        # Delete target
+        new_data = dict(self.config_entry.data)
+        device_config = dict(new_data.get("device_config", {}))
+        targets = list(device_config.get(CONF_NUMERIC_TARGETS, []))
+        
+        if index < len(targets):
+            targets.pop(index)
+            device_config[CONF_NUMERIC_TARGETS] = targets
+            new_data["device_config"] = device_config
+            
+            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+            
+            # Update coordinator
+            coordinator = self.hass.data[DOMAIN].get(self.config_entry.entry_id)
+            if coordinator:
+                coordinator.device_config = device_config
+        
+        return await self.async_step_manage_targets()
