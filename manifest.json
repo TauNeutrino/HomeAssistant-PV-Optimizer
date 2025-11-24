@@ -2,7 +2,7 @@
   "domain": "pv_optimizer",
   "name": "PV Optimizer",
   "config_flow": true,
-  "version": "1.0.1",
+  "version": "1.1.0",
   "documentation": "https://github.com/yourusername/ha-pv-optimizer",
   "issue_tracker": "https://github.com/yourusername/ha-pv-optimizer/issues",
   "dependencies": [
