@@ -15,6 +15,7 @@ from datetime import datetime
 
 from homeassistant.components import websocket_api
 from homeassistant.core import callback
+from homeassistant.loader import async_get_integration
 
 from .const import DOMAIN
 from .coordinators import ServiceCoordinator, DeviceCoordinator
@@ -54,8 +55,13 @@ async def async_setup_connection(hass):
                 )
                 return
             
+            # Get integration version
+            integration = await async_get_integration(hass, DOMAIN)
+            version = integration.version
+
             # Build response data structure
             response_data = {
+                "version": version,
                 "global_config": service_coordinator.global_config,
                 "devices": [],
             }

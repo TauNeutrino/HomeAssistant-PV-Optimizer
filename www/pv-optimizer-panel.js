@@ -140,15 +140,24 @@ class PvOptimizerPanel extends LitElement {
       <div class="header">
         <div class="header-content">
           <div class="title">
-            <ha-icon icon="mdi:solar-power"></ha-icon>
-            PV Optimizer
+            ${this.narrow ? html`
+              <ha-menu-button
+                .hass=${this.hass}
+                .narrow=${this.narrow}
+              ></ha-menu-button>
+            ` : ""}
+            <div style="display: flex; align-items: center;">
+              <ha-icon icon="mdi:solar-power" style="margin-right: 10px;"></ha-icon>
+              PV Optimizer
+              ${this._config?.version ? html`<span class="version">v${this._config.version}</span>` : ""}
+            </div>
           </div>
           <div class="actions">
-            <ha-button @click=${this._openConfiguration} outlined>
+            <ha-button @click=${this._openConfiguration} outlined style="--mdc-theme-primary: var(--app-header-text-color, white); border-color: rgba(255,255,255,0.5);">
               <ha-icon slot="icon" icon="mdi:cog"></ha-icon>
               Configuration
             </ha-button>
-            <div class="status-indicator ${ready ? 'ready' : 'error'}">
+            <div class="status-indicator ${ready ? 'ready' : 'error'}" style="background: rgba(255,255,255,0.1); color: inherit;">
               <ha-icon icon=${ready ? "mdi:check-circle" : "mdi:alert-circle"}></ha-icon>
               ${ready ? "System Ready" : "System Issue"}
             </div>
@@ -174,7 +183,7 @@ class PvOptimizerPanel extends LitElement {
     if (!stats) return html`<div class="loading">Loading statistics...</div>`;
 
     const items = [
-      { label: "Current Surplus", value: `${(-stats.current_surplus).toFixed(0)} W`, icon: "mdi:flash" },
+      { label: "Current Surplus", value: `${(stats.current_surplus).toFixed(0)} W`, icon: "mdi:flash" },
       { label: "Avg Surplus", value: `${stats.averaged_surplus.toFixed(0)} W`, icon: "mdi:chart-bell-curve-cumulative" },
       { label: "Potential Load", value: `${stats.potential_power_on_devices.toFixed(0)} W`, icon: "mdi:lightning-bolt-outline" },
       { label: "Active Load", value: `${stats.measured_power_on_devices.toFixed(0)} W`, icon: "mdi:lightning-bolt" },
@@ -425,27 +434,39 @@ class PvOptimizerPanel extends LitElement {
 
       /* Header */
       .header {
-        margin-bottom: 24px;
+        background-color: var(--app-header-background-color, var(--primary-color));
+        color: var(--app-header-text-color, white);
+        padding: 10px 16px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.14);
       }
       .header-content {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        flex-wrap: wrap;
-        gap: 16px;
+        max-width: 1200px;
+        margin: 0 auto;
+        height: 44px; /* Standard HA header height */
       }
       .title {
-        font-size: 28px;
-        font-weight: 500;
+        font-size: 20px;
+        font-weight: 400;
         display: flex;
         align-items: center;
         gap: 12px;
-        color: var(--primary-text-color);
+      }
+      .version {
+        font-size: 12px;
+        opacity: 0.8;
+        margin-left: 8px;
+        font-weight: normal;
+        background: rgba(255, 255, 255, 0.2);
+        padding: 2px 6px;
+        border-radius: 4px;
       }
       .actions {
         display: flex;
+        gap: 12px;
         align-items: center;
-        gap: 16px;
       }
       .status-indicator {
         display: flex;
