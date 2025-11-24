@@ -82,6 +82,10 @@ async def async_setup_connection(hass):
             surplus_sensor_entity_id = service_coordinator.global_config.get("surplus_sensor_entity_id")
             current_surplus_state = hass.states.get(surplus_sensor_entity_id) if surplus_sensor_entity_id else None
             current_surplus = float(current_surplus_state.state) if current_surplus_state and current_surplus_state.state not in ['unknown', 'unavailable'] else 0.0
+            
+            # Default inversion (Negative = Surplus -> Positive = Surplus)
+            current_surplus *= -1
+            
             if service_coordinator.global_config.get("invert_surplus_value", False):
                 current_surplus *= -1
 
