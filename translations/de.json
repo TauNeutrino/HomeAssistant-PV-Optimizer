@@ -240,6 +240,17 @@
       "target_value": {
         "name": "Zielwert"
       }
+    },
+    "binary_sensor": {
+      "is_locked": {
+        "name": "Gesperrt"
+      },
+      "timing_lock": {
+        "name": "Zeitsperre"
+      },
+      "manual_lock": {
+        "name": "Manuelle Sperre"
+      }
     }
   }
 }

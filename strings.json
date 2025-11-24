@@ -1,7 +1,258 @@
 {
     "title": "PV Optimizer",
+    "icon": "mdi:solar-power",
     "config": {
-        "flow_title": "PV Optimizer"
+        "step": {
+            "user": {
+                "title": "PV Optimizer Setup",
+                "description": "Configure global settings for PV Optimizer.",
+                "data": {
+                    "surplus_sensor_entity_id": "PV Surplus Sensor",
+                    "sliding_window_size": "Sliding Window Size (minutes)",
+                    "optimization_cycle_time": "Optimization Cycle Time (seconds)"
+                }
+            }
+        },
+        "error": {
+            "invalid_entity": "Invalid entity selected.",
+            "duplicate_name": "A device with this name already exists."
+        }
     },
-    "icon": "mdi:solar-power"
+    "options": {
+        "step": {
+            "init": {
+                "title": "PV Optimizer",
+                "description": "Choose an option",
+                "menu_options": {
+                    "global_config": "Global Configuration",
+                    "manage_devices": "Manage Devices"
+                }
+            },
+            "global_config": {
+                "title": "Global Configuration",
+                "description": "Configure global parameters for the PV Optimizer.",
+                "data": {
+                    "surplus_sensor_entity_id": "PV Surplus Sensor",
+                    "sliding_window_size": "Sliding Window Size",
+                    "optimization_cycle_time": "Optimization Cycle Time"
+                },
+                "data_description": {
+                    "surplus_sensor_entity_id": "The sensor that provides PV surplus/deficit values (negative = surplus)",
+                    "sliding_window_size": "Time window for averaging power measurements (1-60 minutes)",
+                    "optimization_cycle_time": "How often the optimizer runs (10-300 seconds)"
+                }
+            },
+            "manage_devices": {
+                "title": "Manage Devices",
+                "description": "Manage your controllable devices",
+                "menu_options": {
+                    "device_list": "Show Device List",
+                    "add_switch_device": "Add Switch Device",
+                    "add_numeric_device": "Add Numeric Device"
+                }
+            },
+            "device_list": {
+                "title": "Device List",
+                "description": "{info}",
+                "data": {
+                    "device": "Device",
+                    "action": "Action"
+                }
+            },
+            "add_switch_device": {
+                "title": "Add Switch Device",
+                "description": "Configure a new Switch device (On/Off control)",
+                "data": {
+                    "name": "Device Name",
+                    "priority": "Priority",
+                    "power": "Nominal Power",
+                    "optimization_enabled": "Optimization Enabled",
+                    "simulation_active": "Simulation Active",
+                    "switch_entity_id": "Switch Entity",
+                    "invert_switch": "Invert Switch Logic",
+                    "measured_power_entity_id": "Measured Power Sensor",
+                    "power_threshold": "Power Threshold",
+                    "min_on_time": "Minimum On Time",
+                    "min_off_time": "Minimum Off Time"
+                },
+                "data_description": {
+                    "name": "A unique name for this device",
+                    "priority": "1 = highest priority (activated first), 10 = lowest priority",
+                    "power": "The device's nominal power consumption in Watts",
+                    "optimization_enabled": "Whether this device should be managed by the optimizer",
+                    "simulation_active": "Whether this device should only be simulated (no physical control)",
+                    "switch_entity_id": "The switch entity to control",
+                    "invert_switch": "Turn OFF to activate, ON to deactivate",
+                    "measured_power_entity_id": "Optional: Sensor providing actual power consumption",
+                    "power_threshold": "Power threshold in Watts to determine if device is ON",
+                    "min_on_time": "Device must stay on for at least this duration",
+                    "min_off_time": "Device must stay off for at least this duration"
+                }
+            },
+            "add_numeric_device": {
+                "title": "Add Numeric Device",
+                "description": "Configure a new Numeric device. Next step: Configure numeric targets (up to 5).",
+                "data": {
+                    "name": "Device Name",
+                    "priority": "Priority",
+                    "power": "Nominal Power",
+                    "optimization_enabled": "Optimization Enabled",
+                    "simulation_active": "Simulation Active",
+                    "measured_power_entity_id": "Measured Power Sensor",
+                    "power_threshold": "Power Threshold",
+                    "min_on_time": "Minimum On Time",
+                    "min_off_time": "Minimum Off Time"
+                },
+                "data_description": {
+                    "name": "A unique name for this device",
+                    "priority": "1 = highest priority (activated first), 10 = lowest priority",
+                    "power": "The device's nominal power consumption in Watts",
+                    "optimization_enabled": "Whether this device should be managed by the optimizer",
+                    "simulation_active": "Whether this device should only be simulated (no physical control)",
+                    "measured_power_entity_id": "Optional: Sensor providing actual power consumption",
+                    "power_threshold": "Power threshold in Watts to determine if device is ON",
+                    "min_on_time": "Device must stay on for at least this duration",
+                    "min_off_time": "Device must stay off for at least this duration"
+                }
+            },
+            "edit_device": {
+                "title": "Edit Device",
+                "description": "Editing device: {device_name}. {info}",
+                "data": {
+                    "type": "Device Type",
+                    "priority": "Priority",
+                    "power": "Nominal Power",
+                    "optimization_enabled": "Optimization Enabled",
+                    "simulation_active": "Simulation Active",
+                    "switch_entity_id": "Switch Entity",
+                    "invert_switch": "Invert Switch Logic",
+                    "measured_power_entity_id": "Measured Power Sensor",
+                    "power_threshold": "Power Threshold",
+                    "min_on_time": "Minimum On Time",
+                    "min_off_time": "Minimum Off Time"
+                }
+            },
+            "confirm_delete": {
+                "title": "Confirm Deletion",
+                "description": "{warning}",
+                "data": {
+                    "confirm": "Yes, delete device '{device_name}'"
+                }
+            },
+            "numeric_targets": {
+                "title": "Numeric Targets",
+                "description": "{info}",
+                "data": {
+                    "target_1_entity": "Target 1: Entity",
+                    "target_1_on": "Target 1: Activated Value",
+                    "target_1_off": "Target 1: Deactivated Value",
+                    "target_2_entity": "Target 2: Entity",
+                    "target_2_on": "Target 2: Activated Value",
+                    "target_2_off": "Target 2: Deactivated Value",
+                    "target_3_entity": "Target 3: Entity",
+                    "target_3_on": "Target 3: Activated Value",
+                    "target_3_off": "Target 3: Deactivated Value",
+                    "target_4_entity": "Target 4: Entity",
+                    "target_4_on": "Target 4: Activated Value",
+                    "target_4_off": "Target 4: Deactivated Value",
+                    "target_5_entity": "Target 5: Entity",
+                    "target_5_on": "Target 5: Activated Value",
+                    "target_5_off": "Target 5: Deactivated Value"
+                },
+                "data_description": {
+                    "target_1_entity": "Number/Input Number entity to control",
+                    "target_1_on": "Value when device is activated",
+                    "target_1_off": "Value when device is deactivated",
+                    "target_2_entity": "Optional: Second entity to control",
+                    "target_2_on": "Value when device is activated",
+                    "target_2_off": "Value when device is deactivated",
+                    "target_3_entity": "Optional: Third entity to control",
+                    "target_3_on": "Value when device is activated",
+                    "target_3_off": "Value when device is deactivated",
+                    "target_4_entity": "Optional: Fourth entity to control",
+                    "target_4_on": "Value when device is activated",
+                    "target_4_off": "Value when device is deactivated",
+                    "target_5_entity": "Optional: Fifth entity to control",
+                    "target_5_on": "Value when device is activated",
+                    "target_5_off": "Value when device is deactivated"
+                }
+            }
+        }
+    },
+    "entity": {
+        "sensor": {
+            "power_budget": {
+                "name": "Power Budget"
+            },
+            "surplus_avg": {
+                "name": "Averaged Surplus"
+            },
+            "current_surplus": {
+                "name": "Current Surplus"
+            },
+            "sliding_window": {
+                "name": "Sliding Window Size"
+            },
+            "cycle_time": {
+                "name": "Optimization Cycle Time"
+            },
+            "simulation_power_budget": {
+                "name": "Simulation Power Budget"
+            },
+            "real_ideal_devices": {
+                "name": "Real Ideal Devices"
+            },
+            "simulation_ideal_devices": {
+                "name": "Simulation Ideal Devices"
+            },
+            "is_locked": {
+                "name": "Locked"
+            },
+            "measured_power_avg": {
+                "name": "Measured Power Avg"
+            },
+            "last_target_state": {
+                "name": "Last Target State"
+            },
+            "contribution_to_budget": {
+                "name": "Contribution to Budget"
+            }
+        },
+        "switch": {
+            "manual_control": {
+                "name": "Manual Control"
+            },
+            "optimization_enabled": {
+                "name": "Optimization Enabled"
+            },
+            "simulation_active": {
+                "name": "Simulation Active"
+            }
+        },
+        "number": {
+            "priority": {
+                "name": "Priority"
+            },
+            "min_on_time": {
+                "name": "Min On Time"
+            },
+            "min_off_time": {
+                "name": "Min Off Time"
+            },
+            "target_value": {
+                "name": "Target Value"
+            }
+        },
+        "binary_sensor": {
+            "is_locked": {
+                "name": "Locked"
+            },
+            "timing_lock": {
+                "name": "Timing Lock"
+            },
+            "manual_lock": {
+                "name": "Manual Lock"
+            }
+        }
+    }
 }
