@@ -102,6 +102,8 @@ async def async_setup_connection(hass):
                 "measured_power_on_devices": measured_power,
                 "last_update_timestamp": last_update_timestamp.isoformat() if last_update_timestamp else None,
                 "elapsed_seconds_since_update": elapsed_seconds,
+                "elapsed_seconds_since_update": elapsed_seconds,
+                "simulation_surplus_offset": service_coordinator.simulation_surplus_offset,
             }
             
             # Send successful response to frontend
@@ -116,4 +118,30 @@ async def async_setup_connection(hass):
             )
 
     # Register the command with Home Assistant's WebSocket API
+    # Register the command with Home Assistant's WebSocket API
     websocket_api.async_register_command(hass, handle_get_config)
+
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): f"{DOMAIN}/set_simulation_offset",
+            vol.Required("offset"): vol.Coerce(float),
+        }
+    )
+    @websocket_api.async_response
+    async def handle_set_simulation_offset(hass, connection, msg):
+        """Handle the 'pv_optimizer/set_simulation_offset' WebSocket command."""
+        try:
+            service_coordinator = hass.data[DOMAIN].get("service")
+            if not service_coordinator:
+                raise ValueError("Service coordinator not found")
+                
+            offset = msg["offset"]
+            service_coordinator.set_simulation_surplus_offset(offset)
+            
+            connection.send_result(msg["id"], {"success": True})
+            
+        except Exception as e:
+            _LOGGER.error(f"Error setting simulation offset: {e}")
+            connection.send_error(msg["id"], "update_failed", str(e))
+
+    websocket_api.async_register_command(hass, handle_set_simulation_offset)

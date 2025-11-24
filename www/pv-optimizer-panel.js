@@ -55,6 +55,22 @@ class PvOptimizerPanel extends LitElement {
     }, 1000);
   }
 
+  async _handleSimulationOffsetChange(e) {
+    const offset = parseFloat(e.target.value);
+    if (isNaN(offset)) return;
+
+    try {
+      await this.hass.callWS({
+        type: "pv_optimizer/set_simulation_offset",
+        offset: offset
+      });
+      // Refresh config to update UI
+      await this._fetchConfig();
+    } catch (err) {
+      this._error = `Failed to set offset: ${err.message}`;
+    }
+  }
+
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._refreshInterval) {
@@ -219,19 +235,37 @@ class PvOptimizerPanel extends LitElement {
     const usagePercent = budget > 0 ? Math.min((totalPower / budget) * 100, 100) : 0;
 
     return html`
-      <ha-card class="ideal-card">
-        <h1 class="card-header" style="color: var(${colorVar})">
+      <ha-card class="ideal-devices-card" style="border-top: 4px solid var(${colorVar})">
+        <h1 class="card-header">
           <ha-icon icon=${icon}></ha-icon>
           ${title}
         </h1>
         <div class="card-content">
+          ${sensorKey === 'simulation_ideal_devices' ? html`
+            <div class="simulation-offset-container" style="margin-bottom: 16px; padding: 0 8px;">
+              <ha-textfield
+                label="Additional Surplus (W)"
+                type="number"
+                .value=${this._config.optimizer_stats?.simulation_surplus_offset || 0}
+                @change=${this._handleSimulationOffsetChange}
+                icon="mdi:plus-minus"
+                style="width: 100%;"
+              >
+                <ha-icon slot="leadingIcon" icon="mdi:plus-minus"></ha-icon>
+              </ha-textfield>
+              <div class="caption" style="font-size: 12px; color: var(--secondary-text-color); margin-top: 4px;">
+                Add virtual surplus to test scenarios (e.g., +1000W)
+              </div>
+            </div>
+          ` : ''}
+
           <div class="budget-bar">
             <div class="budget-info">
-              <span>Usage: ${totalPower.toFixed(0)}W</span>
-              <span>Budget: ${budget.toFixed(0)}W</span>
+              <span>Power Budget</span>
+              <span>${budget.toFixed(0)} W</span>
             </div>
             <div class="progress-track">
-              <div class="progress-fill" style="width: ${usagePercent}%; background-color: var(${colorVar})"></div>
+              <div class="progress-fill" style="width: ${Math.min((budget / 5000) * 100, 100)}%; background-color: var(${colorVar})"></div>
             </div>
           </div>
 

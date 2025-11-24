@@ -257,6 +257,9 @@ class ServiceCoordinator(DataUpdateCoordinator):
         
         # Registry of device coordinators
         self.device_coordinators: Dict[str, DeviceCoordinator] = {}
+        
+        # Simulation specific
+        self.simulation_surplus_offset: float = 0.0
 
     def register_device_coordinator(self, device_coordinator: DeviceCoordinator) -> None:
         """Register a device coordinator for optimization."""
@@ -307,7 +310,7 @@ class ServiceCoordinator(DataUpdateCoordinator):
             (name, state) for name, state in device_states.items()
             if self._get_device_config(name).get(CONF_SIMULATION_ACTIVE, False)
         ]
-        sim_power_budget = await self._calculate_power_budget(sim_devices)
+        sim_power_budget = await self._calculate_power_budget(sim_devices, surplus_offset=self.simulation_surplus_offset)
         # SIMULATION IGNORES MANUAL LOCKS
         sim_ideal_list = await self._calculate_ideal_state(sim_power_budget, sim_devices, ignore_manual_lock=True)
         
@@ -326,6 +329,7 @@ class ServiceCoordinator(DataUpdateCoordinator):
             "ideal_on_list": real_ideal_list,
             "simulation_power_budget": max(0.0, sim_power_budget),
             "simulation_ideal_on_list": sim_ideal_list,
+            "simulation_surplus_offset": self.simulation_surplus_offset,
             "last_update_timestamp": dt_util.now(),
         }
 
@@ -334,9 +338,12 @@ class ServiceCoordinator(DataUpdateCoordinator):
         coordinator = self.device_coordinators.get(device_name)
         return coordinator.device_config if coordinator else {}
 
-    async def _calculate_power_budget(self, devices: List[tuple[str, Dict[str, Any]]]) -> float:
+    async def _calculate_power_budget(self, devices: List[tuple[str, Dict[str, Any]]], surplus_offset: float = 0.0) -> float:
         """Calculate available power budget."""
         surplus_avg = await self._get_averaged_surplus()
+        
+        # Apply offset (for simulation)
+        surplus_avg += surplus_offset
         
         running_manageable_power = 0.0
         for device_name, state in devices:
@@ -346,8 +353,16 @@ class ServiceCoordinator(DataUpdateCoordinator):
                 running_manageable_power += power
         
         budget = surplus_avg + running_manageable_power
-        _LOGGER.info(f"Budget Calc: Surplus={surplus_avg:.2f}W, Running={running_manageable_power:.2f}W, Total={budget:.2f}W")
+        _LOGGER.info(f"Budget Calc: Surplus={surplus_avg:.2f}W (Offset={surplus_offset:.2f}W), Running={running_manageable_power:.2f}W, Total={budget:.2f}W")
         return budget
+
+    def set_simulation_surplus_offset(self, offset: float) -> None:
+        """Set the surplus offset for simulation."""
+        self.simulation_surplus_offset = float(offset)
+        _LOGGER.info(f"Set simulation surplus offset to {offset}W")
+        # Trigger update
+        self.async_set_updated_data(self.data)
+        self.hass.async_create_task(self.async_request_refresh())
 
     async def _calculate_ideal_state(self, power_budget: float, devices: List[tuple[str, Dict[str, Any]]], ignore_manual_lock: bool = False) -> List[str]:
         """Calculate ideal list of devices to turn on."""
