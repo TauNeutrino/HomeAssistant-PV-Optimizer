@@ -360,33 +360,35 @@ class PvOptimizerPanel extends LitElement {
     return html`
       ${this._renderHeader()}
       
-      ${this._error ? this._renderErrorCard() : ""}
+      <div class="content">
+        ${this._error ? this._renderErrorCard() : ""}
 
-      <div class="dashboard-grid">
-        <div class="main-column">
-          ${this._renderGlobalConfigCard()}
-          
-          <div class="view-toggle">
-            <ha-button @click=${this._toggleComparison}>
-              <ha-icon slot="icon" icon=${this._showComparison ? "mdi:view-dashboard" : "mdi:table-large"}></ha-icon>
-              ${this._showComparison ? "View Cards" : "View Comparison"}
-            </ha-button>
-          </div>
+        <div class="dashboard-grid">
+          <div class="main-column">
+            ${this._renderGlobalConfigCard()}
+            
+            <div class="view-toggle">
+              <ha-button @click=${this._toggleComparison}>
+                <ha-icon slot="icon" icon=${this._showComparison ? "mdi:view-dashboard" : "mdi:table-large"}></ha-icon>
+                ${this._showComparison ? "View Cards" : "View Comparison"}
+              </ha-button>
+            </div>
 
-          ${this._showComparison
+            ${this._showComparison
         ? this._renderComparisonTable()
         : html`
-                <div class="dual-grid">
-                  ${this._renderIdealDevicesCard("Real Optimization", "real_ideal_devices", "mdi:lightning-bolt", "--success-color")}
-                  ${this._renderIdealDevicesCard("Simulation", "simulation_ideal_devices", "mdi:flask", "--info-color")}
-                </div>
-              `}
-        </div>
+                  <div class="dual-grid">
+                    ${this._renderIdealDevicesCard("Real Optimization", "real_ideal_devices", "mdi:lightning-bolt", "--success-color")}
+                    ${this._renderIdealDevicesCard("Simulation", "simulation_ideal_devices", "mdi:flask", "--info-color")}
+                  </div>
+                `}
+          </div>
 
-        <div class="devices-column">
-          <h2 class="section-title">Managed Devices</h2>
-          <div class="devices-grid">
-            ${this._config?.devices?.map(d => this._renderDeviceCard(d))}
+          <div class="devices-column">
+            <h2 class="section-title">Managed Devices</h2>
+            <div class="devices-grid">
+              ${this._config?.devices?.map(d => this._renderDeviceCard(d))}
+            </div>
           </div>
         </div>
       </div>
@@ -397,7 +399,6 @@ class PvOptimizerPanel extends LitElement {
     return css`
       :host {
         display: block;
-        padding: 16px;
         --ha-card-border-radius: 12px;
         --success-color: var(--success-color, #4caf50);
         --info-color: var(--info-color, #2196f3);
@@ -406,6 +407,10 @@ class PvOptimizerPanel extends LitElement {
       }
 
       /* Layout */
+      .content {
+        padding: 16px;
+      }
+
       .dashboard-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
@@ -443,8 +448,7 @@ class PvOptimizerPanel extends LitElement {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        max-width: 1200px;
-        margin: 0 auto;
+        width: 100%;
         height: 44px; /* Standard HA header height */
       }
       .title {
