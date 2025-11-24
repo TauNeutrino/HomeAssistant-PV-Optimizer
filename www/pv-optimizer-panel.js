@@ -174,7 +174,7 @@ class PvOptimizerPanel extends LitElement {
     if (!stats) return html`<div class="loading">Loading statistics...</div>`;
 
     const items = [
-      { label: "Current Surplus", value: `${stats.current_surplus.toFixed(0)} W`, icon: "mdi:flash" },
+      { label: "Current Surplus", value: `${(-stats.current_surplus).toFixed(0)} W`, icon: "mdi:flash" },
       { label: "Avg Surplus", value: `${stats.averaged_surplus.toFixed(0)} W`, icon: "mdi:chart-bell-curve-cumulative" },
       { label: "Potential Load", value: `${stats.potential_power_on_devices.toFixed(0)} W`, icon: "mdi:lightning-bolt-outline" },
       { label: "Active Load", value: `${stats.measured_power_on_devices.toFixed(0)} W`, icon: "mdi:lightning-bolt" },
