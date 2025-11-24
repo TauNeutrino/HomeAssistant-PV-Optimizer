@@ -45,9 +45,8 @@ async def async_setup_entry(
     
     entities = []
     
-    # Manual control switch (only for switch-type devices)
-    if device_type == TYPE_SWITCH:
-        entities.append(DeviceManualSwitch(coordinator))
+    # Manual control switch (for ALL device types)
+    entities.append(DeviceManualSwitch(coordinator))
     
     # Optimization enabled switch (all devices)
     entities.append(DeviceOptimizationSwitch(coordinator))
@@ -59,7 +58,7 @@ async def async_setup_entry(
 
 
 class DeviceManualSwitch(CoordinatorEntity, SwitchEntity):
-    """Manual control switch for switch-type devices."""
+    """Manual control switch for both switch-type and numeric-type devices."""
     
     _attr_has_entity_name = True
     _attr_translation_key = "manual_control"
@@ -68,13 +67,19 @@ class DeviceManualSwitch(CoordinatorEntity, SwitchEntity):
         """Initialize the switch."""
         super().__init__(coordinator)
         device_config = coordinator.device_config
+        self._device_type = device_config.get(CONF_TYPE)
+        
+        # Switch specific config
         self._switch_entity_id = device_config.get(CONF_SWITCH_ENTITY_ID)
         self._invert = device_config.get(CONF_INVERT_SWITCH, False)
+        
+        # Numeric specific config
+        self._numeric_targets = device_config.get(CONF_NUMERIC_TARGETS, [])
+        
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_manual_control"
         
         # Link to device
         device_name = coordinator.device_name
-        device_type = device_config.get(CONF_TYPE, "Unknown")
         normalized_name = normalize_device_name(device_name)
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
@@ -82,30 +87,69 @@ class DeviceManualSwitch(CoordinatorEntity, SwitchEntity):
     
     @property
     def is_on(self) -> bool:
-        """Return true if the switch is on."""
-        if not self._switch_entity_id:
+        """Return true if the device is effectively 'on'."""
+        if self._device_type == TYPE_SWITCH:
+            if not self._switch_entity_id:
+                return False
+            state = self.hass.states.get(self._switch_entity_id)
+            if state:
+                on_state = state.state == "on"
+                return not on_state if self._invert else on_state
             return False
-        state = self.hass.states.get(self._switch_entity_id)
-        if state:
-            on_state = state.state == "on"
-            return not on_state if self._invert else on_state
+            
+        elif self._device_type == TYPE_NUMERIC:
+            # For numeric devices, consider it ON if ANY target matches its activated value
+            for target in self._numeric_targets:
+                entity_id = target[CONF_NUMERIC_ENTITY_ID]
+                state = self.hass.states.get(entity_id)
+                if state and state.state not in ['unknown', 'unavailable']:
+                    try:
+                        current_value = float(state.state)
+                        if current_value == target[CONF_ACTIVATED_VALUE]:
+                            return True
+                    except (ValueError, TypeError):
+                        continue
+            return False
+            
         return False
     
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the switch on."""
-        target_state = "off" if self._invert else "on"
-        await self.hass.services.async_call(
-            "switch", "turn_on" if target_state == "on" else "turn_off",
-            {"entity_id": self._switch_entity_id}
-        )
+        """Turn the device on."""
+        if self._device_type == TYPE_SWITCH:
+            target_state = "off" if self._invert else "on"
+            await self.hass.services.async_call(
+                "switch", "turn_on" if target_state == "on" else "turn_off",
+                {"entity_id": self._switch_entity_id}
+            )
+            
+        elif self._device_type == TYPE_NUMERIC:
+            # Set all numeric targets to their activated values
+            for target in self._numeric_targets:
+                entity_id = target[CONF_NUMERIC_ENTITY_ID]
+                value = target[CONF_ACTIVATED_VALUE]
+                await self.hass.services.async_call(
+                    "number", "set_value",
+                    {"entity_id": entity_id, "value": value}
+                )
     
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn the switch off."""
-        target_state = "on" if self._invert else "off"
-        await self.hass.services.async_call(
-            "switch", "turn_on" if target_state == "on" else "turn_off",
-            {"entity_id": self._switch_entity_id}
-        )
+        """Turn the device off."""
+        if self._device_type == TYPE_SWITCH:
+            target_state = "on" if self._invert else "off"
+            await self.hass.services.async_call(
+                "switch", "turn_on" if target_state == "on" else "turn_off",
+                {"entity_id": self._switch_entity_id}
+            )
+            
+        elif self._device_type == TYPE_NUMERIC:
+            # Set all numeric targets to their deactivated values
+            for target in self._numeric_targets:
+                entity_id = target[CONF_NUMERIC_ENTITY_ID]
+                value = target[CONF_DEACTIVATED_VALUE]
+                await self.hass.services.async_call(
+                    "number", "set_value",
+                    {"entity_id": entity_id, "value": value}
+                )
 
 
 class DeviceOptimizationSwitch(CoordinatorEntity, SwitchEntity, RestoreEntity):
