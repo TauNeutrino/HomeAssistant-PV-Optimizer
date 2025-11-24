@@ -176,32 +176,39 @@ class DeviceCoordinator(DataUpdateCoordinator):
 
     def _is_device_locked(self, is_on: bool, now: datetime) -> bool:
         """Determine if device is locked in its current state."""
-        # Check minimum on time
-        if is_on:
-            min_on_minutes = self.device_config.get(CONF_MIN_ON_TIME, 0)
-            if min_on_minutes > 0:
-                last_on_time = self.state_changes.get("last_on_time")
-                if last_on_time:
-                    time_on = (now - last_on_time).total_seconds() / 60
-                    if time_on < min_on_minutes:
-                        return True
+    def _get_lock_status(self, current_state: bool) -> tuple[bool, bool]:
+        """
+        Determine if device is locked.
+        Returns (locked_timing, locked_manual).
+        """
+        now = dt_util.now()
+        config = self.device_config
         
-        # Check minimum off time
-        if not is_on:
-            min_off_minutes = self.device_config.get(CONF_MIN_OFF_TIME, 0)
-            if min_off_minutes > 0:
-                last_off_time = self.state_changes.get("last_off_time")
-                if last_off_time:
-                    time_off = (now - last_off_time).total_seconds() / 60
-                    if time_off < min_off_minutes:
-                        return True
+        # 1. Timing Lock (Min On/Off Time)
+        locked_timing = False
+        if self.last_switch_time:
+            elapsed = (now - self.last_switch_time).total_seconds() / 60.0
+            if current_state:
+                # Currently ON -> Check Min On Time
+                min_on = config.get(CONF_MIN_ON_TIME, 0)
+                if min_on > 0 and elapsed < min_on:
+                    locked_timing = True
+            else:
+                # Currently OFF -> Check Min Off Time
+                min_off = config.get(CONF_MIN_OFF_TIME, 0)
+                if min_off > 0 and elapsed < min_off:
+                    locked_timing = True
         
-        # Check for manual intervention
+        # 2. Manual Lock (User Intervention)
+        locked_manual = False
         last_target = self.device_state.get(ATTR_PVO_LAST_TARGET_STATE)
-        if last_target is not None and last_target != is_on:
-            return True
         
-        return False
+        # If we have a last target state, and it differs from current state,
+        # it implies manual intervention or an external change not initiated by PVO.
+        if last_target is not None and current_state != last_target:
+            locked_manual = True
+            
+        return locked_timing, locked_manual
 
     def update_config(self, key: str, value: Any) -> None:
         """Update device configuration in memory."""
@@ -212,12 +219,14 @@ class DeviceCoordinator(DataUpdateCoordinator):
         if self.device_instance:
             await self.device_instance.activate()
             self.device_state[ATTR_PVO_LAST_TARGET_STATE] = True
+            self.last_switch_time = dt_util.now() # PVO initiated switch
 
     async def deactivate(self) -> None:
         """Deactivate the device."""
         if self.device_instance:
             await self.device_instance.deactivate()
             self.device_state[ATTR_PVO_LAST_TARGET_STATE] = False
+            self.last_switch_time = dt_util.now() # PVO initiated switch
 
 
 class ServiceCoordinator(DataUpdateCoordinator):
@@ -290,7 +299,7 @@ class ServiceCoordinator(DataUpdateCoordinator):
             if self._get_device_config(name).get(CONF_OPTIMIZATION_ENABLED, True)
         ]
         real_power_budget = await self._calculate_power_budget(real_devices)
-        real_ideal_list = await self._calculate_ideal_state(real_power_budget, real_devices)
+        real_ideal_list = await self._calculate_ideal_state(real_power_budget, real_devices, ignore_manual_lock=False)
         await self._synchronize_states(real_ideal_list, real_devices)
         
         # Run simulation optimization
@@ -299,7 +308,8 @@ class ServiceCoordinator(DataUpdateCoordinator):
             if self._get_device_config(name).get(CONF_SIMULATION_ACTIVE, False)
         ]
         sim_power_budget = await self._calculate_power_budget(sim_devices)
-        sim_ideal_list = await self._calculate_ideal_state(sim_power_budget, sim_devices)
+        # SIMULATION IGNORES MANUAL LOCKS
+        sim_ideal_list = await self._calculate_ideal_state(sim_power_budget, sim_devices, ignore_manual_lock=True)
         
         _LOGGER.info(
             f"Optimization cycle completed.\n"
@@ -336,10 +346,10 @@ class ServiceCoordinator(DataUpdateCoordinator):
                 running_manageable_power += power
         
         budget = surplus_avg + running_manageable_power
-        _LOGGER.debug(f"Power budget: {surplus_avg:.2f}W surplus + {running_manageable_power:.2f}W running = {budget:.2f}W")
+        _LOGGER.info(f"Budget Calc: Surplus={surplus_avg:.2f}W, Running={running_manageable_power:.2f}W, Total={budget:.2f}W")
         return budget
 
-    async def _calculate_ideal_state(self, power_budget: float, devices: List[tuple[str, Dict[str, Any]]]) -> List[str]:
+    async def _calculate_ideal_state(self, power_budget: float, devices: List[tuple[str, Dict[str, Any]]], ignore_manual_lock: bool = False) -> List[str]:
         """Calculate ideal list of devices to turn on."""
         ideal_on_list = []
         remaining_budget = power_budget
@@ -353,23 +363,43 @@ class ServiceCoordinator(DataUpdateCoordinator):
                 devices_by_priority[priority] = []
             devices_by_priority[priority].append((device_name, state, config))
         
+        _LOGGER.debug(f"Calculating ideal state. Budget={power_budget:.2f}W, Priorities={list(devices_by_priority.keys())}, IgnoreManual={ignore_manual_lock}")
+        
         # Process priorities
         for priority in sorted(devices_by_priority.keys()):
             priority_devices = devices_by_priority[priority]
-            selected = self._knapsack_select(priority_devices, remaining_budget)
+            selected = self._knapsack_select(priority_devices, remaining_budget, ignore_manual_lock)
             ideal_on_list.extend(selected)
             
             # Update budget
             for device_name in selected:
                 _, _, config = next(d for d in priority_devices if d[0] == device_name)
-                remaining_budget -= config.get(CONF_POWER, 0)
+                power = config.get(CONF_POWER, 0)
+                remaining_budget -= power
+                _LOGGER.debug(f"Selected {device_name} (Prio {priority}, {power}W). Remaining Budget={remaining_budget:.2f}W")
         
         return ideal_on_list
 
-    def _knapsack_select(self, devices: List[tuple[str, Dict[str, Any], Dict[str, Any]]], budget: float) -> List[str]:
+    def _knapsack_select(self, devices: List[tuple[str, Dict[str, Any], Dict[str, Any]]], budget: float, ignore_manual_lock: bool = False) -> List[str]:
         """Select devices via greedy knapsack."""
-        available = [(name, state, config) for name, state, config in devices 
-                     if not state.get(ATTR_IS_LOCKED, False)]
+        # Filter locked devices
+        available = []
+        for name, state, config in devices:
+            # Determine if locked based on mode
+            is_locked = False
+            if ignore_manual_lock:
+                # Simulation: Only respect timing locks
+                if state.get("is_locked_timing", False):
+                    is_locked = True
+                    _LOGGER.debug(f"Skipping {name}: Timing Locked")
+            else:
+                # Real: Respect all locks (legacy ATTR_IS_LOCKED covers both)
+                if state.get(ATTR_IS_LOCKED, False):
+                    is_locked = True
+                    _LOGGER.debug(f"Skipping {name}: Locked")
+            
+            if not is_locked:
+                available.append((name, state, config))
         
         # Sort by power descending
         available.sort(key=lambda d: d[2].get(CONF_POWER, 0), reverse=True)
@@ -380,6 +410,8 @@ class ServiceCoordinator(DataUpdateCoordinator):
             if power <= budget:
                 selected.append(device_name)
                 budget -= power
+            else:
+                _LOGGER.debug(f"Skipping {device_name}: Power {power}W > Budget {budget:.2f}W")
         
         return selected
 
@@ -407,7 +439,11 @@ class ServiceCoordinator(DataUpdateCoordinator):
         if not surplus_entity:
             return 0.0
         
-        invert_value = self.global_config.get(CONF_INVERT_SURPLUS_VALUE, False)
+        # Requirements state Negative = Surplus.
+        # We invert by default so that internal logic sees Positive = Surplus.
+        # If user checks "Invert Surplus", we invert AGAIN (effectively keeping original sign).
+        invert_config = self.global_config.get(CONF_INVERT_SURPLUS_VALUE, False)
+        
         window_minutes = self.global_config.get(CONF_SLIDING_WINDOW_SIZE, 5)
         now = dt_util.now()
         start_time = now - timedelta(minutes=window_minutes)
@@ -420,8 +456,14 @@ class ServiceCoordinator(DataUpdateCoordinator):
                 values = [float(state.state) for state in history[surplus_entity] 
                          if state.state not in ['unknown', 'unavailable']]
                 avg = sum(values) / len(values) if values else 0.0
-                if invert_value:
+                
+                # Default inversion (Negative -> Positive)
+                avg = avg * -1
+                
+                # Configured inversion (flip it back if user wants)
+                if invert_config:
                     avg = avg * -1
+                    
                 return avg
         except Exception as e:
             _LOGGER.warning(f"Failed to get averaged surplus: {e}")
@@ -429,6 +471,12 @@ class ServiceCoordinator(DataUpdateCoordinator):
         # Fallback
         state = self.hass.states.get(surplus_entity)
         current = float(state.state) if state and state.state not in ['unknown', 'unavailable'] else 0.0
-        if invert_value:
+        
+        # Default inversion (Negative -> Positive)
+        current = current * -1
+        
+        # Configured inversion
+        if invert_config:
             current = current * -1
+            
         return current

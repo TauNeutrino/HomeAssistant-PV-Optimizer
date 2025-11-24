@@ -26,6 +26,11 @@ from .const import (
     TYPE_SWITCH,
     CONF_OPTIMIZATION_ENABLED,
     CONF_SIMULATION_ACTIVE,
+    CONF_NUMERIC_TARGETS,
+    TYPE_NUMERIC,
+    CONF_NUMERIC_ENTITY_ID,
+    CONF_ACTIVATED_VALUE,
+    CONF_DEACTIVATED_VALUE,
     normalize_device_name,
 )
 from .coordinators import DeviceCoordinator

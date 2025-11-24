@@ -146,7 +146,7 @@ async def _async_setup_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> 
     )
     
     # Setup platforms based on device type (AFTER device exists)
-    platforms = ["sensor", "switch"]  # All devices have sensors and switches
+    platforms = ["sensor", "switch", "binary_sensor"]  # All devices have sensors, switches, and binary_sensors
     
     if device_type == "switch":
         platforms.append("number")  # Switch devices also have number controls
@@ -193,7 +193,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_type = device_config.get("type")
         device_name = device_config.get("name", "Unknown")
         
-        platforms = ["sensor"]
+        platforms = ["sensor", "binary_sensor"]
         if device_type == "switch":
             platforms.extend(["switch", "number"])
         elif device_type == "numeric":

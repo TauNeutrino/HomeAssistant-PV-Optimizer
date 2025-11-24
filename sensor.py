@@ -73,7 +73,6 @@ async def _async_setup_device_sensors(
     coordinator: DeviceCoordinator = hass.data[DOMAIN][config_entry.entry_id]
     
     entities = [
-        DeviceLockedSensor(coordinator),
         DevicePowerSensor(coordinator),
         DeviceTargetStateSensor(coordinator),
         DeviceConfigurationSensor(coordinator),  # Shows all config including targets
@@ -213,37 +212,6 @@ class ServiceSimulationIdealDevicesSensor(CoordinatorEntity, SensorEntity):
 # ============================================================================
 # DEVICE SENSORS (Per-Device)
 # ============================================================================
-
-class DeviceLockedSensor(CoordinatorEntity, SensorEntity):
-    """Device locked status sensor."""
-    
-    _attr_has_entity_name = True
-    _attr_translation_key = "is_locked"
-    
-    def __init__(self, coordinator: DeviceCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_is_locked"
-        
-        # Link to device
-        device_name = coordinator.device_name
-        normalized_name = normalize_device_name(device_name)
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}_{normalized_name}")},
-        }
-    
-    @property
-    def native_value(self) -> bool:
-        """Return the locked status."""
-        if self.coordinator.data:
-            return self.coordinator.data.get(ATTR_IS_LOCKED, False)
-        return False
-    
-    @property
-    def icon(self) -> str:
-        """Return the icon."""
-        return "mdi:lock" if self.native_value else "mdi:lock-open"
-
 
 class DevicePowerSensor(CoordinatorEntity, SensorEntity):
     """Device measured power sensor."""
