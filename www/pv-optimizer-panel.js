@@ -136,16 +136,50 @@ class PvOptimizerPanel extends LitElement {
     this._showComparison = !this._showComparison;
   }
 
+  _findEntityByTranslationKey(translationKey) {
+    if (!this.hass) return null;
+    // Search for entity with matching unique_id pattern
+    for (const entityId in this.hass.states) {
+      if (entityId.startsWith('sensor.pv_optimizer_')) {
+        const entity = this.hass.states[entityId];
+        // Check if the entity's unique_id ends with our translation key
+        const state = entity;
+        // Match by checking if entity ID contains key parts
+        if (translationKey === 'simulation_ideal_devices' && 
+            (entityId.includes('simulation') && (entityId.includes('ideal') || entityId.includes('ideale')))) {
+          return entity;
+        }
+        if (translationKey === 'real_ideal_devices' && 
+            (entityId.includes('real') || entityId.includes('reale')) && 
+            (entityId.includes('ideal') || entityId.includes('ideale')) &&
+            !entityId.includes('simulation')) {
+          return entity;
+        }
+        if (translationKey === 'simulation_power_budget' && 
+            entityId.includes('simulation') && 
+            (entityId.includes('budget') || entityId.includes('leistung'))) {
+          return entity;
+        }
+        if (translationKey === 'power_budget' && 
+            (entityId.includes('budget') || entityId.includes('leistung')) &&
+            !entityId.includes('simulation')) {
+          return entity;
+        }
+      }
+    }
+    return null;
+  }
+
   _getIdealDevices(sensorName) {
     if (!this.hass) return [];
-    const entity = this.hass.states[`sensor.pv_optimizer_${sensorName}`];
+    const entity = this._findEntityByTranslationKey(sensorName);
     return entity?.attributes?.device_details || [];
   }
 
   _getPowerBudget(key) {
     if (!this.hass) return 0;
-    const sensorName = key === 'real' ? 'power_budget' : 'simulation_power_budget';
-    const entity = this.hass.states[`sensor.pv_optimizer_${sensorName}`];
+    const translationKey = key === 'real' ? 'power_budget' : 'simulation_power_budget';
+    const entity = this._findEntityByTranslationKey(translationKey);
     return parseFloat(entity?.state) || 0;
   }
 
@@ -262,10 +296,10 @@ class PvOptimizerPanel extends LitElement {
           <div class="budget-bar">
             <div class="budget-info">
               <span>Power Budget</span>
-              <span>${budget.toFixed(0)} W</span>
+              <span style="${budget < 0 ? 'color: var(--error-color); font-weight: 600;' : ''}">${budget.toFixed(0)} W</span>
             </div>
             <div class="progress-track">
-              <div class="progress-fill" style="width: ${Math.min((budget / 5000) * 100, 100)}%; background-color: var(${colorVar})"></div>
+              <div class="progress-fill" style="width: ${budget < 0 ? 0 : Math.min((budget / 5000) * 100, 100)}%; background-color: var(${colorVar})"></div>
             </div>
           </div>
 

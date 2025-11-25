@@ -305,6 +305,9 @@ class ServiceCoordinator(DataUpdateCoordinator):
         real_ideal_list = await self._calculate_ideal_state(real_power_budget, real_devices, ignore_manual_lock=False)
         await self._synchronize_states(real_ideal_list, real_devices)
         
+        # Calculate averaged surplus first (needed for logging and return data)
+        surplus_avg = await self._get_averaged_surplus()
+        
         # Run simulation optimization
         sim_devices = [
             (name, state) for name, state in device_states.items()
@@ -314,6 +317,13 @@ class ServiceCoordinator(DataUpdateCoordinator):
         # SIMULATION IGNORES MANUAL LOCKS
         sim_ideal_list = await self._calculate_ideal_state(sim_power_budget, sim_devices, ignore_manual_lock=True)
         
+        _LOGGER.warning(
+            f"Optimization cycle debug:\n"
+            f"  Offset: {self.simulation_surplus_offset}\n"
+            f"  Sim Budget: {sim_power_budget}\n"
+            f"  Surplus Avg: {surplus_avg}"
+        )
+        
         _LOGGER.info(
             f"Optimization cycle completed.\n"
             f"  Real: Budget={real_power_budget:.2f}W, Ideal devices={real_ideal_list}\n"
@@ -321,13 +331,11 @@ class ServiceCoordinator(DataUpdateCoordinator):
         )
         
         # Return data for sensors
-        surplus_avg = await self._get_averaged_surplus()
-        
         return {
-            "power_budget": max(0.0, real_power_budget),
-            "surplus_avg": max(0.0, surplus_avg),
+            "power_budget": real_power_budget,
+            "surplus_avg": surplus_avg,
             "ideal_on_list": real_ideal_list,
-            "simulation_power_budget": max(0.0, sim_power_budget),
+            "simulation_power_budget": sim_power_budget,
             "simulation_ideal_on_list": sim_ideal_list,
             "simulation_surplus_offset": self.simulation_surplus_offset,
             "last_update_timestamp": dt_util.now(),
@@ -353,8 +361,9 @@ class ServiceCoordinator(DataUpdateCoordinator):
                 running_manageable_power += power
         
         budget = surplus_avg + running_manageable_power
-        _LOGGER.info(f"Budget Calc: Surplus={surplus_avg:.2f}W (Offset={surplus_offset:.2f}W), Running={running_manageable_power:.2f}W, Total={budget:.2f}W")
+        _LOGGER.warning(f"Budget Calc: Surplus={surplus_avg:.2f}W (Offset={surplus_offset:.2f}W), Running={running_manageable_power:.2f}W, Total={budget:.2f}W")
         return budget
+
 
     def set_simulation_surplus_offset(self, offset: float) -> None:
         """Set the surplus offset for simulation."""

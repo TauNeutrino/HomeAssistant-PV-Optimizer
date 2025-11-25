@@ -89,7 +89,7 @@ class ServicePowerBudgetSensor(CoordinatorEntity, SensorEntity):
     """Power budget sensor for service."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "power_budget"
+    _attr_name = "Power Budget"
     
     def __init__(self, coordinator: ServiceCoordinator) -> None:
         """Initialize the sensor."""
@@ -117,7 +117,7 @@ class ServiceSurplusAvgSensor(CoordinatorEntity, SensorEntity):
     """Surplus average sensor for service."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "surplus_avg"
+    _attr_name = "Surplus Avg"
     
     def __init__(self, coordinator: ServiceCoordinator) -> None:
         """Initialize the sensor."""
@@ -142,7 +142,7 @@ class ServiceSimulationBudgetSensor(CoordinatorEntity, SensorEntity):
     """Simulation power budget sensor for service."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "simulation_power_budget"
+    _attr_name = "Simulation Power Budget"
     
     def __init__(self, coordinator: ServiceCoordinator) -> None:
         """Initialize the sensor."""
@@ -167,7 +167,7 @@ class ServiceRealIdealDevicesSensor(CoordinatorEntity, SensorEntity):
     """Real ideal devices list sensor for service."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "real_ideal_devices"
+    _attr_name = "Real Ideal Devices"
     
     def __init__(self, coordinator: ServiceCoordinator) -> None:
         """Initialize the sensor."""
@@ -184,13 +184,34 @@ class ServiceRealIdealDevicesSensor(CoordinatorEntity, SensorEntity):
             devices = self.coordinator.data.get("ideal_on_list", [])
             return ", ".join(devices) if devices else "None"
         return "None"
+    
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return device details for frontend display."""
+        if not self.coordinator.data:
+            return {"device_details": []}
+        
+        device_list = self.coordinator.data.get("ideal_on_list", [])
+        device_details = []
+        
+        for device_name in device_list:
+            coordinator = self.coordinator.device_coordinators.get(device_name)
+            if coordinator:
+                config = coordinator.device_config
+                device_details.append({
+                    "name": device_name,
+                    "power": config.get("power", 0),
+                    "priority": config.get("priority", 5),
+                })
+        
+        return {"device_details": device_details}
 
 
 class ServiceSimulationIdealDevicesSensor(CoordinatorEntity, SensorEntity):
     """Simulation ideal devices list sensor for service."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "simulation_ideal_devices"
+    _attr_name = "Simulation Ideal Devices"
     
     def __init__(self, coordinator: ServiceCoordinator) -> None:
         """Initialize the sensor."""
@@ -207,6 +228,27 @@ class ServiceSimulationIdealDevicesSensor(CoordinatorEntity, SensorEntity):
             devices = self.coordinator.data.get("simulation_ideal_on_list", [])
             return ", ".join(devices) if devices else "None"
         return "None"
+    
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return device details for frontend display."""
+        if not self.coordinator.data:
+            return {"device_details": []}
+        
+        device_list = self.coordinator.data.get("simulation_ideal_on_list", [])
+        device_details = []
+        
+        for device_name in device_list:
+            coordinator = self.coordinator.device_coordinators.get(device_name)
+            if coordinator:
+                config = coordinator.device_config
+                device_details.append({
+                    "name": device_name,
+                    "power": config.get("power", 0),
+                    "priority": config.get("priority", 5),
+                })
+        
+        return {"device_details": device_details}
 
 
 # ============================================================================
