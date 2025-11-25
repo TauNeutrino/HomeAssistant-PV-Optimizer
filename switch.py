@@ -66,7 +66,7 @@ class DeviceManualSwitch(CoordinatorEntity, SwitchEntity):
     """Manual control switch for both switch-type and numeric-type devices."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "manual_control"
+    _attr_name = "Manual Control"
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the switch."""
@@ -161,7 +161,7 @@ class DeviceOptimizationSwitch(CoordinatorEntity, SwitchEntity, RestoreEntity):
     """Optimization enabled switch for device."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "optimization_enabled"
+    _attr_name = "Optimization Enabled"
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the switch."""
@@ -207,7 +207,7 @@ class DeviceSimulationSwitch(CoordinatorEntity, SwitchEntity, RestoreEntity):
     """Simulation active switch for device."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "simulation_active"
+    _attr_name = "Simulation Active"
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the switch."""

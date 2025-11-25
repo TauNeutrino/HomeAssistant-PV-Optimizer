@@ -63,7 +63,7 @@ class DeviceLockedBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for overall lock status."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "is_locked"
+    _attr_name = "Locked"
     _attr_name = "Locked"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     
@@ -96,7 +96,7 @@ class DeviceTimingLockBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for timing lock status."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "timing_lock"
+    _attr_name = "Timing Lock"
     _attr_name = "Timing Lock"  # Explicit name fallback
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     
@@ -129,7 +129,7 @@ class DeviceManualLockBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for manual lock status."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "manual_lock"
+    _attr_name = "Manual Lock"
     _attr_name = "Manual Lock"  # Explicit name fallback
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     

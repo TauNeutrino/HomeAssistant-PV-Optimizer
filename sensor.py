@@ -259,7 +259,7 @@ class DevicePowerSensor(CoordinatorEntity, SensorEntity):
     """Device measured power sensor."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "measured_power_avg"
+    _attr_name = "Measured Power Avg"
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the sensor."""
@@ -288,7 +288,7 @@ class DeviceTargetStateSensor(CoordinatorEntity, SensorEntity):
     """Device target state sensor."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "last_target_state"
+    _attr_name = "Last Target State"
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the sensor."""
@@ -327,7 +327,7 @@ class DeviceConfigurationSensor(CoordinatorEntity, SensorEntity):
     """Device configuration summary sensor."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "configuration"
+    _attr_name = "Configuration"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:

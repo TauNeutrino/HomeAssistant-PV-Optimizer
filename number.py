@@ -66,7 +66,7 @@ class DevicePriorityNumber(CoordinatorEntity, NumberEntity, RestoreEntity):
     """Priority number for device."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "priority"
+    _attr_name = "Priority"
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the number."""
@@ -109,7 +109,7 @@ class DeviceMinOnTimeNumber(CoordinatorEntity, NumberEntity, RestoreEntity):
     """Minimum on time number for device."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "min_on_time"
+    _attr_name = "Min On Time"
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the number."""
@@ -153,7 +153,7 @@ class DeviceMinOffTimeNumber(CoordinatorEntity, NumberEntity, RestoreEntity):
     """Minimum off time number for device."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "min_off_time"
+    _attr_name = "Min Off Time"
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the number."""
@@ -197,7 +197,7 @@ class DeviceTargetNumber(CoordinatorEntity, NumberEntity):
     """Target value number for numeric devices."""
     
     _attr_has_entity_name = True
-    _attr_translation_key = "target_value"
+    _attr_name = "Target Value"
     
     def __init__(self, coordinator: DeviceCoordinator, target: Dict[str, Any]) -> None:
         """Initialize the number."""
