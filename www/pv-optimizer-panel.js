@@ -338,10 +338,8 @@ class PvOptimizerPanel extends LitElement {
         <h1 class="card-header">
           <ha-icon icon=${icon}></ha-icon>
           ${title}
-        </h1>
-        <div class="card-content">
           ${sensorKey === 'simulation_ideal_devices' ? html`
-            <div class="simulation-offset-container" style="margin-bottom: 16px; padding: 0 8px;">
+            <div style="margin-left: auto; display: flex; align-items: center;">
               <ha-textfield
                 label="Additional Surplus (W)"
                 type="number"
@@ -352,11 +350,10 @@ class PvOptimizerPanel extends LitElement {
               >
                 <ha-icon slot="leadingIcon" icon="mdi:plus-minus"></ha-icon>
               </ha-textfield>
-              <div class="caption" style="font-size: 12px; color: var(--secondary-text-color); margin-top: 4px;">
-                Add virtual surplus to test scenarios (e.g., +1000W)
-              </div>
             </div>
           ` : ''}
+        </h1>
+        <div class="card-content">
 
           <div class="budget-bar">
             <div class="budget-info">
