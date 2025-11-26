@@ -236,6 +236,11 @@ class DeviceCoordinator(DataUpdateCoordinator):
         _LOGGER.info(f"Reset target state for device: {self.device_name}")
         # Trigger update to refresh sensors/UI
         self.async_set_updated_data(self.device_state)
+        
+        # Trigger optimization cycle on service coordinator
+        if self.service_coordinator:
+            _LOGGER.info(f"Triggering optimization after reset for device: {self.device_name}")
+            await self.service_coordinator.async_request_refresh()
 
 
 class ServiceCoordinator(DataUpdateCoordinator):
@@ -462,9 +467,39 @@ class ServiceCoordinator(DataUpdateCoordinator):
             if should_be_on and not currently_on and not is_locked:
                 await coordinator.activate()
                 _LOGGER.info(f"Activated device: {device_name}")
+                
+                # Verify switch was successful
+                await self._verify_switch(coordinator, device_name, expected_state=True)
+                
             elif not should_be_on and currently_on and not is_locked:
                 await coordinator.deactivate()
                 _LOGGER.info(f"Deactivated device: {device_name}")
+                
+                # Verify switch was successful
+                await self._verify_switch(coordinator, device_name, expected_state=False)
+
+    async def _verify_switch(self, coordinator: "DeviceCoordinator", device_name: str, expected_state: bool) -> None:
+        """Verify that a device switch was successful."""
+        import asyncio
+        
+        # Wait for device to respond
+        await asyncio.sleep(1)
+        
+        # Re-read device state
+        if coordinator.device_instance:
+            actual_state = coordinator.device_instance.is_on()
+            
+            if actual_state != expected_state:
+                _LOGGER.warning(
+                    f"Switch verification failed for {device_name}: "
+                    f"Expected {expected_state}, got {actual_state}. "
+                    f"Clearing last_target_state to allow retry."
+                )
+                # Clear last_target_state to prevent lock and allow retry
+                coordinator.device_state[ATTR_PVO_LAST_TARGET_STATE] = None
+                coordinator.async_set_updated_data(coordinator.device_state)
+            else:
+                _LOGGER.debug(f"Switch verification successful for {device_name}: state is {actual_state}")
 
     async def _get_averaged_surplus(self) -> float:
         """Get averaged PV surplus."""
