@@ -100,6 +100,8 @@ class DeviceCoordinator(DataUpdateCoordinator):
         self.device_state: Dict[str, Any] = {}
         self.state_changes: Dict[str, datetime] = {}
         
+        # Tracking for locking logic
+        self.last_switch_time: Optional[datetime] = None
         
         # Service coordinator reference (set during registration)
         self.service_coordinator: Optional["ServiceCoordinator"] = None

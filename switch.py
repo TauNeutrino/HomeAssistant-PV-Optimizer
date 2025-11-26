@@ -50,9 +50,6 @@ async def async_setup_entry(
     
     entities = []
     
-    # Manual control switch (for ALL device types)
-    entities.append(DeviceManualSwitch(coordinator))
-    
     # Optimization enabled switch (all devices)
     entities.append(DeviceOptimizationSwitch(coordinator))
     
