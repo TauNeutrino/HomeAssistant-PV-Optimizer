@@ -137,13 +137,16 @@ class DeviceCoordinator(DataUpdateCoordinator):
         measured_power_avg = await self._get_averaged_power(now, global_config)
         
         # Determine lock status
-        is_locked = self._is_device_locked(is_on, now)
+        locked_timing, locked_manual = self._get_lock_status(is_on)
+        is_locked = locked_timing or locked_manual
         
         # Update state cache
         self.device_state = {
             "is_on": is_on,
             "measured_power_avg": measured_power_avg,
             ATTR_IS_LOCKED: is_locked,
+            "is_locked_timing": locked_timing,
+            "is_locked_manual": locked_manual,
             ATTR_PVO_LAST_TARGET_STATE: self.device_state.get(ATTR_PVO_LAST_TARGET_STATE, is_on),
             "last_update": now,
         }
@@ -174,8 +177,6 @@ class DeviceCoordinator(DataUpdateCoordinator):
         state = self.hass.states.get(power_sensor)
         return float(state.state) if state and state.state not in ['unknown', 'unavailable'] else 0.0
 
-    def _is_device_locked(self, is_on: bool, now: datetime) -> bool:
-        """Determine if device is locked in its current state."""
     def _get_lock_status(self, current_state: bool) -> tuple[bool, bool]:
         """
         Determine if device is locked.
@@ -186,7 +187,8 @@ class DeviceCoordinator(DataUpdateCoordinator):
         
         # 1. Timing Lock (Min On/Off Time)
         locked_timing = False
-        if self.last_switch_time:
+        # Check if we have a last switch time
+        if hasattr(self, 'last_switch_time') and self.last_switch_time:
             elapsed = (now - self.last_switch_time).total_seconds() / 60.0
             if current_state:
                 # Currently ON -> Check Min On Time

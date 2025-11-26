@@ -90,8 +90,31 @@ class PvOptimizerPanel extends LitElement {
   }
 
   updated(changedProperties) {
-    if (changedProperties.has("hass") && this.hass && !this._config) {
-      this._fetchConfig();
+    if (changedProperties.has("hass")) {
+      // Initial load
+      if (this.hass && !this._config) {
+        this._fetchConfig();
+      }
+
+      // Reactive update: Check if power budget sensor updated
+      // This signals that an optimization cycle just finished
+      const oldHass = changedProperties.get("hass");
+      if (oldHass && this.hass) {
+        const entityId = "sensor.pv_optimizer_power_budget";
+        const oldState = oldHass.states[entityId];
+        const newState = this.hass.states[entityId];
+
+        if (oldState !== newState && newState) {
+          // Sensor changed (state or attributes/timestamp)
+          // Trigger refresh to get full config/stats
+          // Debounce slightly to allow other sensors to settle if needed
+          if (this._debounceFetch) clearTimeout(this._debounceFetch);
+          this._debounceFetch = setTimeout(() => {
+            console.log("PV Optimizer: Power budget updated, refreshing config...");
+            this._fetchConfig();
+          }, 500);
+        }
+      }
     }
   }
 
@@ -111,6 +134,10 @@ class PvOptimizerPanel extends LitElement {
       const response = await this.hass.callWS({
         type: "pv_optimizer/config",
       });
+
+      console.log("PV Optimizer Config Response:", response);
+      console.log("Devices array:", response?.devices);
+      console.log("Number of devices:", response?.devices?.length);
 
       this._config = response;
       if (response?.optimizer_stats?.last_update_timestamp) {
@@ -145,24 +172,24 @@ class PvOptimizerPanel extends LitElement {
         // Check if the entity's unique_id ends with our translation key
         const state = entity;
         // Match by checking if entity ID contains key parts
-        if (translationKey === 'simulation_ideal_devices' && 
-            (entityId.includes('simulation') && (entityId.includes('ideal') || entityId.includes('ideale')))) {
+        if (translationKey === 'simulation_ideal_devices' &&
+          (entityId.includes('simulation') && (entityId.includes('ideal') || entityId.includes('ideale')))) {
           return entity;
         }
-        if (translationKey === 'real_ideal_devices' && 
-            (entityId.includes('real') || entityId.includes('reale')) && 
-            (entityId.includes('ideal') || entityId.includes('ideale')) &&
-            !entityId.includes('simulation')) {
+        if (translationKey === 'real_ideal_devices' &&
+          (entityId.includes('real') || entityId.includes('reale')) &&
+          (entityId.includes('ideal') || entityId.includes('ideale')) &&
+          !entityId.includes('simulation')) {
           return entity;
         }
-        if (translationKey === 'simulation_power_budget' && 
-            entityId.includes('simulation') && 
-            (entityId.includes('budget') || entityId.includes('leistung'))) {
+        if (translationKey === 'simulation_power_budget' &&
+          entityId.includes('simulation') &&
+          (entityId.includes('budget') || entityId.includes('leistung'))) {
           return entity;
         }
-        if (translationKey === 'power_budget' && 
-            (entityId.includes('budget') || entityId.includes('leistung')) &&
-            !entityId.includes('simulation')) {
+        if (translationKey === 'power_budget' &&
+          (entityId.includes('budget') || entityId.includes('leistung')) &&
+          !entityId.includes('simulation')) {
           return entity;
         }
       }
@@ -262,6 +289,22 @@ class PvOptimizerPanel extends LitElement {
     `;
   }
 
+  _getDeviceColor(index) {
+    const colors = [
+      '#4CAF50', // Green
+      '#2196F3', // Blue
+      '#FFC107', // Amber
+      '#9C27B0', // Purple
+      '#F44336', // Red
+      '#00BCD4', // Cyan
+      '#FF9800', // Orange
+      '#795548', // Brown
+      '#607D8B', // Blue Grey
+      '#E91E63'  // Pink
+    ];
+    return colors[index % colors.length];
+  }
+
   _renderIdealDevicesCard(title, sensorKey, icon, colorVar) {
     const devices = this._getIdealDevices(sensorKey);
     const budget = this._getPowerBudget(sensorKey === 'real_ideal_devices' ? 'real' : 'simulation');
@@ -298,8 +341,23 @@ class PvOptimizerPanel extends LitElement {
               <span>Power Budget</span>
               <span style="${budget < 0 ? 'color: var(--error-color); font-weight: 600;' : ''}">${budget.toFixed(0)} W</span>
             </div>
-            <div class="progress-track">
-              <div class="progress-fill" style="width: ${budget < 0 ? 0 : Math.min((budget / 5000) * 100, 100)}%; background-color: var(${colorVar})"></div>
+            <div class="progress-track" style="display: flex; overflow: hidden;">
+              ${budget > 0 ? html`
+                ${devices.map((device, index) => {
+      const width = Math.min((device.power / budget) * 100, 100);
+      const color = this._getDeviceColor(index);
+      return html`<div class="progress-fill" style="width: ${width}%; background-color: ${color}; border-right: 1px solid rgba(255,255,255,0.2);" title="${device.name}: ${device.power}W"></div>`;
+    })}
+                ${(() => {
+          const usedPower = devices.reduce((sum, d) => sum + (d.power || 0), 0);
+          const remaining = Math.max(0, budget - usedPower);
+          if (remaining > 0) {
+            const width = Math.min((remaining / budget) * 100, 100);
+            return html`<div class="progress-fill" style="width: ${width}%; background-color: var(${colorVar}); opacity: 0.2;" title="Unused: ${remaining.toFixed(0)}W"></div>`;
+          }
+          return '';
+        })()}
+              ` : ''}
             </div>
           </div>
 
@@ -307,9 +365,10 @@ class PvOptimizerPanel extends LitElement {
         ? html`<div class="empty-state">No active devices</div>`
         : html`
                 <div class="device-list-compact">
-                  ${devices.map(device => html`
+                  ${devices.map((device, index) => html`
                     <div class="device-row">
                       <div class="device-main">
+                        <div style="width: 8px; height: 8px; border-radius: 50%; background-color: ${this._getDeviceColor(index)}; margin-right: 8px; display: inline-block;"></div>
                         <span class="device-name">${device.name}</span>
                         <span class="device-meta">Prio ${device.priority}</span>
                       </div>
@@ -387,7 +446,10 @@ class PvOptimizerPanel extends LitElement {
             <ha-icon icon=${isOn ? "mdi:power-plug" : "mdi:power-plug-off"} class="device-icon"></ha-icon>
             ${device.name}
           </div>
-          ${isLocked ? html`<ha-icon icon="mdi:lock" title="Locked"></ha-icon>` : ''}
+          <div class="lock-icons">
+            ${state.is_locked_timing ? html`<ha-icon icon="mdi:timer-lock" title="Timing Lock (Min On/Off Time)" class="lock-icon"></ha-icon>` : ''}
+            ${state.is_locked_manual ? html`<ha-icon icon="mdi:account-lock" title="Manual Lock (User Intervention)" class="lock-icon"></ha-icon>` : ''}
+          </div>
         </div>
         
         <div class="device-body">
@@ -653,6 +715,14 @@ class PvOptimizerPanel extends LitElement {
         justify-content: space-between;
         align-items: flex-start;
         margin-bottom: 12px;
+      }
+      .lock-icons {
+        display: flex;
+        gap: 4px;
+      }
+      .lock-icon {
+        color: var(--warning-color);
+        --mdc-icon-size: 20px;
       }
       .device-title {
         font-weight: 500;

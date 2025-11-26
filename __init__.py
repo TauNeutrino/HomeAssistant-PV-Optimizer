@@ -125,11 +125,29 @@ async def _async_setup_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> 
     hass.data[DOMAIN][entry.entry_id] = coordinator
     
     # Register with service coordinator
+    # Note: Service entry may not be set up yet due to parallel setup
     service_coordinator = hass.data[DOMAIN].get("service")
     if service_coordinator:
         service_coordinator.register_device_coordinator(coordinator)
+        _LOGGER.info(f"Registered device coordinator: {device_name}")
     else:
-        _LOGGER.warning(f"Service coordinator not found when setting up device: {device_name}")
+        # Service coordinator not ready yet - schedule delayed registration
+        _LOGGER.warning(f"Service coordinator not found when setting up device: {device_name}, will retry")
+        
+        async def _delayed_registration():
+            """Retry registration after service coordinator is ready."""
+            import asyncio
+            for attempt in range(10):  # Try for up to 5 seconds
+                await asyncio.sleep(0.5)
+                service_coordinator = hass.data[DOMAIN].get("service")
+                if service_coordinator:
+                    service_coordinator.register_device_coordinator(coordinator)
+                    _LOGGER.info(f"Registered device coordinator (delayed): {device_name}")
+                    return
+            _LOGGER.error(f"Failed to register device coordinator after retries: {device_name}")
+        
+        # Schedule delayed registration
+        hass.async_create_task(_delayed_registration())
     
     # Create device in device registry FIRST (before platforms)
     from .const import normalize_device_name

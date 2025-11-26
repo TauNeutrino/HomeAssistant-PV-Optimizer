@@ -157,3 +157,25 @@ To allow for real-time adjustments from the UI, the following parameters will be
 - **`Optimization Enabled`**: A `switch` entity to enable or disable the device from being considered by the optimizer.
 - **`Minimum On Time`**: A `number` entity to adjust the `min_on_time`.
 - **`Minimum Off Time`**: A `number` entity to adjust the `min_off_time`.
+
+## 6. Advanced Features
+
+### 6.1. Simulation Mode
+To allow users to test configuration changes without affecting real devices, a "Simulation Mode" is available.
+- **Global Simulation**: The system calculates a parallel "simulation budget" and "simulation ideal list".
+- **Device Simulation**: Each device has a `simulation_active` flag.
+    - If `true`, the device participates in the simulation calculation.
+    - Simulation ignores manual locks (assumes the optimizer has full control).
+- **Surplus Offset**: The simulation can run with a virtual offset to the surplus (e.g., "what if I had 500W more surplus?").
+
+### 6.2. Invert Surplus
+A global configuration option `invert_surplus_value` allows handling surplus sensors that report positive values for export (instead of the default negative).
+
+### 6.3. Manual Control
+Each device has a dedicated "Manual Control" switch entity that allows forcing the device state, which is useful for testing and overrides.
+
+### 6.4. Detailed Monitoring
+The system provides granular feedback on why a device is locked:
+- **Timing Lock**: Locked due to minimum on/off time constraints.
+- **Manual Lock**: Locked due to user intervention (state mismatch with optimizer target).
+
