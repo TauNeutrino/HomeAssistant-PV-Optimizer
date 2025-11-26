@@ -87,7 +87,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name=f"{DOMAIN}_{device_name}",
-            update_interval=timedelta(seconds=30),  # Device state updates every 30s
+            update_interval=timedelta(seconds=10),  # Device state updates every 10s
         )
         self.config_entry = config_entry
         self.device_config = device_config
@@ -105,6 +105,71 @@ class DeviceCoordinator(DataUpdateCoordinator):
         
         # Service coordinator reference (set during registration)
         self.service_coordinator: Optional["ServiceCoordinator"] = None
+        
+        # State change listeners
+        self._unsub_listeners: List = []
+        
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass, set up state listeners."""
+        await super().async_added_to_hass()
+        
+        device_type = self.device_config.get(CONF_TYPE)
+        entities_to_monitor = []
+        
+        # 1. Switch entity (for switch-type devices)
+        if device_type == TYPE_SWITCH:
+            switch_entity = self.device_config.get(CONF_SWITCH_ENTITY_ID)
+            if switch_entity:
+                entities_to_monitor.append(switch_entity)
+        
+        # 2. Numeric target entities (for numeric-type devices)
+        elif device_type == TYPE_NUMERIC:
+            numeric_targets = self.device_config.get(CONF_NUMERIC_TARGETS, [])
+            for target in numeric_targets:
+                numeric_entity = target.get(CONF_NUMERIC_ENTITY_ID)
+                if numeric_entity:
+                    entities_to_monitor.append(numeric_entity)
+        
+        # 3. Power sensor (for all device types)
+        power_sensor = self.device_config.get(CONF_MEASURED_POWER_ENTITY_ID)
+        if power_sensor:
+            entities_to_monitor.append(power_sensor)
+        
+        # Set up listeners for all entities
+        for entity_id in entities_to_monitor:
+            self._unsub_listeners.append(
+                self.hass.helpers.event.async_track_state_change_event(
+                    entity_id,
+                    self._handle_state_change
+                )
+            )
+            _LOGGER.debug(f"{self.device_name}: Listening to {entity_id} state changes")
+    
+    async def async_will_remove_from_hass(self) -> None:
+        """Clean up listeners when coordinator is removed."""
+        for unsub in self._unsub_listeners:
+            unsub()
+        self._unsub_listeners.clear()
+        await super().async_will_remove_from_hass()
+    
+    def _handle_state_change(self, event) -> None:
+        """Handle state change events for monitored entities."""
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+        
+        if old_state is None or new_state is None:
+            return
+        
+        if old_state.state == new_state.state:
+            return
+        
+        _LOGGER.debug(
+            f"{self.device_name}: State change detected - "
+            f"{event.data.get('entity_id')}: {old_state.state} → {new_state.state}"
+        )
+        
+        # Trigger immediate coordinator update
+        self.hass.async_create_task(self.async_request_refresh())
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Update device state."""
@@ -207,10 +272,13 @@ class DeviceCoordinator(DataUpdateCoordinator):
         locked_manual = False
         last_target = self.device_state.get(ATTR_PVO_LAST_TARGET_STATE)
         
-        # If we have a last target state, and it differs from current state,
-        # it implies manual intervention or an external change not initiated by PVO.
+        # Only lock if we have a known last target state that differs from current
+        # If last_target is None (after reset or initial state), don't lock - allow optimizer to take control
         if last_target is not None and current_state != last_target:
             locked_manual = True
+            _LOGGER.debug(f"{self.device_name}: Manual lock detected - current:{current_state}, target:{last_target}")
+        elif last_target is None:
+            _LOGGER.debug(f"{self.device_name}: No last target state (None) - allowing optimizer control")
             
         return locked_timing, locked_manual
 
@@ -270,12 +338,55 @@ class ServiceCoordinator(DataUpdateCoordinator):
         )
         self.config_entry = config_entry
         self.global_config = global_config
-        
         # Registry of device coordinators
         self.device_coordinators: Dict[str, DeviceCoordinator] = {}
         
         # Simulation specific
         self.simulation_surplus_offset: float = 0.0
+        
+        # State change listeners
+        self._unsub_listeners: List = []
+    
+    async def async_added_to_hass(self) -> None:
+        """When coordinator is added to hass, set up state listeners."""
+        await super().async_added_to_hass()
+        
+        # Listen to surplus sensor changes to trigger immediate optimization
+        surplus_sensor = self.global_config.get(CONF_SURPLUS_SENSOR_ENTITY_ID)
+        if surplus_sensor:
+            self._unsub_listeners.append(
+                self.hass.helpers.event.async_track_state_change_event(
+                    surplus_sensor,
+                    self._handle_surplus_change
+                )
+            )
+            _LOGGER.debug(f"ServiceCoordinator: Listening to {surplus_sensor} state changes")
+    
+    async def async_will_remove_from_hass(self) -> None:
+        """Clean up listeners when coordinator is removed."""
+        for unsub in self._unsub_listeners:
+            unsub()
+        self._unsub_listeners.clear()
+        await super().async_will_remove_from_hass()
+    
+    def _handle_surplus_change(self, event) -> None:
+        """Handle surplus sensor state changes."""
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+        
+        if old_state is None or new_state is None:
+            return
+        
+        if old_state.state == new_state.state:
+            return
+        
+        _LOGGER.debug(
+            f"ServiceCoordinator: Surplus change detected - "
+            f"{old_state.state} → {new_state.state}"
+        )
+        
+        # Trigger immediate optimization cycle
+        self.hass.async_create_task(self.async_request_refresh())
 
     def register_device_coordinator(self, device_coordinator: DeviceCoordinator) -> None:
         """Register a device coordinator for optimization."""
@@ -485,7 +596,7 @@ class ServiceCoordinator(DataUpdateCoordinator):
         import asyncio
         
         # Wait for device to respond
-        await asyncio.sleep(1)
+        await asyncio.sleep(3)
         
         # Re-read device state
         if coordinator.device_instance:
