@@ -452,402 +452,385 @@ class PvOptimizerPanel extends LitElement {
     const device = deviceData.config;
     const state = deviceData.state || {};
     const isOn = state.is_on;
-    const isLocked = state.is_locked;
+          <div class="stat-item">
+            <span class="label">Current Surplus</span>
+            <span class="value ${surplus < 0 ? 'negative' : ''}">${surplus.toFixed(0)} W</span>
+          </div>
+          <div class="stat-item">
+            <span class="label">Avg Surplus (10m)</span>
+            <span class="value ${avgSurplus < 0 ? 'negative' : ''}">${avgSurplus.toFixed(0)} W</span>
+          </div>
+          <div class="stat-item">
+            <span class="label">Optimization Cycle</span>
+            <span class="value">${global.optimization_cycle_time || 60}s</span>
+          </div>
+        </div >
+      </div >
+      `;
+  }
+
+  _renderManagedDevices() {
+    if (!this._config) return html``;
+
+    // Sort devices by priority (descending)
+    const devices = [...(this._config.devices || [])].sort((a, b) => {
+      return (b.config?.priority || 0) - (a.config?.priority || 0);
+    });
 
     return html`
-      <ha-card class="device-card ${isOn ? 'active' : ''}">
+      < div class="devices-section" >
+        <div class="section-header">Managed Devices</div>
+        ${ devices.map(device => this._renderDeviceCard(device)) }
+      </div >
+      `;
+  }
+
+  _renderDeviceCard(device) {
+    const state = device.state || {};
+    const config = device.config || {};
+    const isLocked = state.is_locked;
+    const isLockedManual = state.is_locked_manual;
+    const isLockedTiming = state.is_locked_timing;
+    
+    // Check availability (using the diagnostic sensor logic or state presence)
+    const isUnavailable = state.is_on === undefined || state.is_on === null;
+
+    return html`
+      < div class="device-card ${isUnavailable ? 'unavailable' : ''}" >
         <div class="device-header">
-          <div class="device-title">
-            <ha-icon icon=${isOn ? "mdi:power-plug" : "mdi:power-plug-off"} class="device-icon"></ha-icon>
-            ${device.name}
-          </div>
-          <div class="lock-icons">
-            ${state.is_locked_timing ? html`<ha-icon icon="mdi:timer-lock" title="Timing Lock (Min On/Off Time)" class="lock-icon"></ha-icon>` : ''}
-            ${state.is_locked_manual ? html`
-              <ha-icon 
-                icon="mdi:account-lock" 
-                title="Manual Lock (User Intervention)" 
-                class="lock-icon"
-              ></ha-icon>
-              <ha-icon
-                icon="mdi:restore"
-                title="Reset Target State (Clear Lock)"
-                class="reset-icon"
-                @click=${() => this._handleResetDevice(device)}
-              ></ha-icon>
-            ` : ''}
-          </div>
-        </div>
-        
-        <div class="device-body">
-          <div class="chip-container">
-            <span class="chip type">${device.type}</span>
-            <span class="chip priority">Prio ${device.priority}</span>
-          </div>
-          
-          <div class="device-stats">
-            <div class="stat">
-              <span class="label">Rated</span>
-              <span class="value">${device.power} W</span>
-            </div>
-            ${state.measured_power_avg ? html`
-              <div class="stat">
-                <span class="label">Measured</span>
-                <span class="value">${state.measured_power_avg.toFixed(0)} W</span>
-              </div>
-            ` : ''}
-          </div>
+          <span class="device-name">${config.name}</span>
+          <div class="status-badges">
+            <span
+              class="badge ${state.is_on ? 'on' : 'off'}"
+            >${state.is_on ? 'ON' : 'OFF'}</span>
+
+            <span
+              class="badge ${config.optimization_enabled ? 'auto' : 'manual'} clickable"
+              @click="${() => this._toggleOptimization(device)}"
+            title="Click to toggle Optimization"
+            >${config.optimization_enabled ? 'Auto' : 'Manual'}</span>
+
+          <span
+            class="badge ${config.simulation_active ? 'sim' : 'sim-disabled'} clickable"
+              @click="${() => this._toggleSimulation(device)}"
+          title="Click to toggle Simulation"
+            >Sim</span>
+          </div >
+        </div >
+
+      <div class="device-details">
+        <div class="detail-row">
+          <span>Power: ${state.current_power || 0} W</span>
+          <span>Priority: ${config.priority || 0}</span>
         </div>
 
-        <div class="device-footer">
-          <div class="status-badges">
-            ${device.optimization_enabled ? html`<span class="badge success">Auto</span>` : html`<span class="badge warning">Manual</span>`}
-            ${device.simulation_active ? html`<span class="badge info">Sim</span>` : ''}
+        <div class="lock-icons">
+          ${isLockedTiming ? html`<ha-icon class="lock-icon" icon="mdi:timer-lock" title="Timing Lock Active"></ha-icon>` : ''}
+          ${isLockedManual ? html`
+              <ha-icon class="lock-icon" icon="mdi:account-lock" title="Manual Lock Active"></ha-icon>
+              <ha-icon 
+                class="reset-icon" 
+                icon="mdi:restore" 
+                title="Reset Target State"
+                @click="${() => this._handleResetDevice(device)}"
+              ></ha-icon>
+            ` : ''}
+        </div>
+      </div>
+      </div >
+      `;
+  }
+  
+  async _toggleOptimization(device) {
+    if (!device.config.optimization_enabled_entity_id) return;
+    
+    const service = device.config.optimization_enabled ? 'turn_off' : 'turn_on';
+    await this.hass.callService('switch', service, {
+      entity_id: device.config.optimization_enabled_entity_id
+    });
+    // Optimistic update or wait for refresh
+    setTimeout(() => this._fetchConfig(), 500);
+  }
+  
+  async _toggleSimulation(device) {
+    if (!device.config.simulation_active_entity_id) return;
+    
+    const service = device.config.simulation_active ? 'turn_off' : 'turn_on';
+    await this.hass.callService('switch', service, {
+      entity_id: device.config.simulation_active_entity_id
+    });
+    setTimeout(() => this._fetchConfig(), 500);
+  }
+
+  _renderComparison() {
+    if (!this._config || !this._showComparison) return html``;
+
+    const real = this._config.real_optimization || {};
+    const sim = this._config.simulation || {};
+    
+    // Sort lists by priority
+    const sortDevices = (list) => {
+      if (!list) return [];
+      // We need to look up priority from the main devices list
+      return list.sort((a, b) => {
+        const devA = this._config.devices.find(d => d.config.name === a);
+        const devB = this._config.devices.find(d => d.config.name === b);
+        return ((devB?.config?.priority || 0) - (devA?.config?.priority || 0));
+      });
+    };
+
+    const realOn = sortDevices(real.ideal_on_list || []);
+    const simOn = sortDevices(sim.ideal_on_list || []);
+
+    return html`
+      < div class="comparison-view" >
+        <div class="comparison-column">
+          <div class="column-header">Real Optimization</div>
+          <div class="device-list">
+            ${realOn.length ? realOn.map(name => html`<div class="list-item">${name}</div>`) : html`<div class="empty-list">No devices</div>`}
+          </div>
+          <div class="column-footer">Budget: ${real.budget?.toFixed(0)} W</div>
+        </div>
+        
+        <div class="comparison-column simulation">
+          <div class="column-header">
+            Simulation
+            ${sim.surplus_offset ? html`<span class="sim-surplus-header">+${sim.surplus_offset}W</span>` : ''}
+          </div>
+          <div class="device-list">
+            ${simOn.length ? simOn.map(name => html`<div class="list-item">${name}</div>`) : html`<div class="empty-list">No devices</div>`}
+          </div>
+          <div class="column-footer">
+            Budget: ${sim.budget?.toFixed(0)} W
+            <div class="offset-control">
+              <label>Surplus Offset:</label>
+              <input 
+                type="number" 
+                .value="${this._config.global.simulation_offset || 0}"
+                @change="${this._handleSimulationOffsetChange}"
+                step="100"
+              >
+            </div>
           </div>
         </div>
-      </ha-card>
-    `;
+      </div >
+      `;
   }
 
   render() {
     if (this._loading && !this._config) {
-      return html`<div class="loading-screen"><ha-circular-progress active></ha-circular-progress></div>`;
+      return html`< div class="loading-screen" > <ha-circular-progress active></ha-circular-progress></div > `;
     }
 
     return html`
-      ${this._renderHeader()}
-      
-      <div class="content">
-        ${this._error ? this._renderErrorCard() : ""}
+      ${ this._renderHeader() }
 
-        <div class="dashboard-grid">
-          <div class="main-column">
-            ${this._renderGlobalConfigCard()}
-            
-            <div class="view-toggle">
-              <ha-button @click=${this._toggleComparison}>
-                <ha-icon slot="icon" icon=${this._showComparison ? "mdi:view-dashboard" : "mdi:table-large"}></ha-icon>
-                ${this._showComparison ? "View Cards" : "View Comparison"}
-              </ha-button>
-            </div>
+    <div class="content">
+      ${this._error ? this._renderErrorCard() : ""}
 
-            ${this._showComparison
-        ? this._renderComparisonTable()
-        : html`
-                  <div class="dual-grid">
-                    ${this._renderIdealDevicesCard("Real Optimization", "real_ideal_devices", "mdi:lightning-bolt", "--success-color")}
-                    ${this._renderIdealDevicesCard("Simulation", "simulation_ideal_devices", "mdi:flask", "--info-color")}
-                  </div>
-                `}
-          </div>
+      <div class="dashboard-grid">
+        <div class="main-column">
+          ${this._renderPowerBudget()}
+          ${this._renderSystemOverview()}
 
-          <div class="devices-column">
-            <h2 class="section-title">Managed Devices</h2>
-            <div class="devices-grid">
-              ${this._config?.devices?.map(d => this._renderDeviceCard(d))}
-            </div>
-          </div>
+          <div class="view-toggle">
+            <ha-button @click=${this._toggleComparison}>
+            <ha-icon slot="icon" icon=${this._showComparison ? "mdi:view-dashboard" : "mdi:table-large"}></ha-icon>
+            ${this._showComparison ? "View Cards" : "View Comparison"}
+          </ha-button>
         </div>
+
+        ${this._renderComparison()}
       </div>
-    `;
+
+      <div class="devices-column">
+        ${this._renderManagedDevices()}
+      </div>
+    </div>
+      </div >
+      `;
   }
 
   static get styles() {
     return css`
       :host {
-        display: block;
-        --ha-card-border-radius: 12px;
-        --success-color: var(--success-color, #4caf50);
-        --info-color: var(--info-color, #2196f3);
-        --warning-color: var(--warning-color, #ff9800);
-        --error-color: var(--error-color, #f44336);
-      }
-
-      /* Layout */
-      .content {
-        padding: 16px;
-      }
-
-      .dashboard-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-        gap: 24px;
-        margin-top: 24px;
-        align-items: start;
-      }
-
-      .main-column {
-        display: flex;
-        flex-direction: column;
-        gap: 24px;
-      }
-
-      .dual-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-      }
-
-      .devices-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 16px;
-      }
-
-      /* Header */
-      .header {
-        background-color: var(--app-header-background-color, var(--primary-color));
-        color: var(--app-header-text-color, white);
-        padding: 10px 16px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.14);
-      }
-      .header-content {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        width: 100%;
-        height: 44px; /* Standard HA header height */
-      }
-      .title {
-        font-size: 20px;
-        font-weight: 400;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-      .version {
-        font-size: 12px;
-        opacity: 0.8;
-        margin-left: 8px;
-        font-weight: normal;
-        background: rgba(255, 255, 255, 0.2);
-        padding: 2px 6px;
-        border-radius: 4px;
-      }
-      .actions {
-        display: flex;
-        gap: 12px;
-        align-items: center;
-      }
-      .status-indicator {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 14px;
-        font-weight: 500;
-        padding: 6px 12px;
-        border-radius: 16px;
-        background: var(--secondary-background-color);
-      }
-      .status-indicator.ready { color: var(--success-color); }
-      .status-indicator.error { color: var(--error-color); }
-
-      /* Cards */
-      ha-card {
-        display: flex;
-        flex-direction: column;
-        background: var(--ha-card-background, var(--card-background-color, white));
-        border: 1px solid var(--divider-color, #e0e0e0);
-        transition: all 0.3s ease;
-      }
+      display: block;
+      padding: 16px;
+      background - color: var(--primary - background - color);
+      color: var(--primary - text - color);
+      font - family: var(--paper - font - body1_ - _font - family);
+    }
       
-      /* Only stretch cards in grids where they share a row */
-      .dual-grid ha-card,
-      .devices-grid ha-card {
-        height: 100%;
-      }
+      .power - budget - card, .overview - card, .devices - section, .comparison - view {
+      background: var(--card - background - color);
+      border - radius: 12px;
+      padding: 16px;
+      margin - bottom: 16px;
+      box - shadow: var(--ha - card - box - shadow, 0 2px 2px 0 rgba(0, 0, 0, 0.14), 0 1px 5px 0 rgba(0, 0, 0, 0.12), 0 3px 1px - 2px rgba(0, 0, 0, 0.2));
+    }
 
-      .card-header {
-        padding: 16px;
-        margin: 0;
-        font-size: 18px;
-        font-weight: 500;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        color: var(--primary-text-color);
-      }
-      .card-content {
-        padding: 16px;
-        flex: 1;
-      }
+      .card - header {
+      font - size: 1.2em;
+      font - weight: 500;
+      margin - bottom: 12px;
+      display: flex;
+      justify - content: space - between;
+      align - items: center;
+    }
+      
+      .section - header {
+      font - size: 1.1em;
+      font - weight: 500;
+      margin - bottom: 12px;
+      color: var(--secondary - text - color);
+    }
 
-      /* Stats Grid */
-      .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-        gap: 16px;
-        padding: 16px;
-      }
-      .stat-item {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-      .stat-icon {
-        background: var(--secondary-background-color);
-        padding: 8px;
-        border-radius: 50%;
-        color: var(--primary-color);
-      }
-      .stat-value {
-        font-size: 18px;
-        font-weight: 600;
-        color: var(--primary-text-color);
-      }
-      .stat-label {
-        font-size: 12px;
-        color: var(--secondary-text-color);
-      }
+      .progress - bar {
+      background - color: var(--secondary - background - color);
+      height: 24px;
+      border - radius: 12px;
+      overflow: hidden;
+    }
 
-      /* Comparison Table */
-      .table-container {
-        overflow-x: auto;
-        padding: 0 16px 16px;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-      }
-      th {
-        text-align: left;
-        padding: 12px 8px;
-        border-bottom: 2px solid var(--divider-color);
-        color: var(--secondary-text-color);
-        font-weight: 500;
-        font-size: 13px;
-      }
-      td {
-        padding: 12px 8px;
-        border-bottom: 1px solid var(--divider-color);
-        color: var(--primary-text-color);
-        font-size: 14px;
-      }
-      .text-right { text-align: right; }
-      .text-center { text-align: center; }
-      .success-text { color: var(--success-color); }
-      .info-text { color: var(--info-color); }
-      .disabled-text { color: var(--disabled-text-color); }
+      .progress - fill {
+      background - color: var(--primary - color);
+      height: 100 %;
+      transition: width 0.5s ease -in -out;
+    }
+      
+      .progress - fill.warning {
+      background - color: var(--error - color);
+    }
+
+      .stats - grid {
+      display: grid;
+      grid - template - columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+      .stat - item {
+      display: flex;
+      .disabled - text { color: var(--disabled - text - color); }
 
       /* Device Cards */
-      .device-card {
+      .device - card {
         padding: 16px;
-        border-left: 1px solid var(--divider-color);
+        border - left: 1px solid var(--divider - color);
       }
-      .device-card.active {
-        border-left-color: var(--primary-color);
+      .device - card.active {
+        border - left - color: var(--primary - color);
       }
-      .device-header {
+      .device - header {
         display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 12px;
+        justify - content: space - between;
+        align - items: flex - start;
+        margin - bottom: 12px;
       }
-      .lock-icons {
+      .lock - icons {
         display: flex;
         gap: 4px;
       }
-      .lock-icon {
-        color: var(--warning-color);
-        --mdc-icon-size: 20px;
+      .lock - icon {
+        color: var(--warning - color);
+        --mdc - icon - size: 20px;
       }
-      .reset-icon {
-        color: var(--primary-color);
-        --mdc-icon-size: 20px;
-        margin-left: 8px;
+      .reset - icon {
+        color: var(--primary - color);
+        --mdc - icon - size: 20px;
+        margin - left: 8px;
         cursor: pointer;
         opacity: 0.8;
         transition: opacity 0.2s;
       }
-      .reset-icon:hover {
+      .reset - icon:hover {
         opacity: 1;
       }
-      .device-title {
-        font-weight: 500;
+      .device - title {
+        font - weight: 500;
         display: flex;
-        align-items: center;
+        align - items: center;
         gap: 8px;
       }
-      .device-body {
-        margin-bottom: 12px;
+      .device - body {
+        margin - bottom: 12px;
       }
-      .chip-container {
+      .chip - container {
         display: flex;
         gap: 8px;
-        margin-bottom: 8px;
+        margin - bottom: 8px;
       }
       .chip {
-        font-size: 11px;
+        font - size: 11px;
         padding: 2px 8px;
-        border-radius: 10px;
-        background: var(--secondary-background-color);
-        color: var(--secondary-text-color);
+        border - radius: 10px;
+        background: var(--secondary - background - color);
+        color: var(--secondary - text - color);
       }
-      .device-stats {
+      .device - stats {
         display: flex;
-        justify-content: space-between;
-        font-size: 13px;
+        justify - content: space - between;
+        font - size: 13px;
       }
-      .status-badges {
+      .status - badges {
         display: flex;
         gap: 8px;
       }
       .badge {
-        font-size: 11px;
+        font - size: 11px;
         padding: 2px 6px;
-        border-radius: 4px;
-        font-weight: 500;
+        border - radius: 4px;
+        font - weight: 500;
       }
-      .badge.success { background: rgba(76, 175, 80, 0.15); color: var(--success-color); }
-      .badge.warning { background: rgba(255, 152, 0, 0.15); color: var(--warning-color); }
-      .badge.info { background: rgba(33, 150, 243, 0.15); color: var(--info-color); }
+      .badge.success { background: rgba(76, 175, 80, 0.15); color: var(--success - color); }
+      .badge.warning { background: rgba(255, 152, 0, 0.15); color: var(--warning - color); }
+      .badge.info { background: rgba(33, 150, 243, 0.15); color: var(--info - color); }
 
       /* Progress Bar */
-      .budget-bar {
-        margin-bottom: 16px;
+      .budget - bar {
+        margin - bottom: 16px;
       }
-      .budget-info {
+      .budget - info {
         display: flex;
-        justify-content: space-between;
-        font-size: 12px;
-        margin-bottom: 4px;
-        color: var(--secondary-text-color);
+        justify - content: space - between;
+        font - size: 12px;
+        margin - bottom: 4px;
+        color: var(--secondary - text - color);
       }
-      .progress-track {
+      .progress - track {
         height: 8px;
-        background: var(--secondary-background-color);
-        border-radius: 4px;
+        background: var(--secondary - background - color);
+        border - radius: 4px;
         overflow: hidden;
       }
-      .progress-fill {
-        height: 100%;
+      .progress - fill {
+        height: 100 %;
         transition: width 0.5s ease;
       }
 
       /* Utilities */
-      .view-toggle {
+      .view - toggle {
         margin: 16px 0;
-        text-align: center;
+        text - align: center;
       }
-      .section-title {
-        font-size: 20px;
-        font-weight: 400;
-        margin-bottom: 16px;
-        color: var(--primary-text-color);
+      .section - title {
+        font - size: 20px;
+        font - weight: 400;
+        margin - bottom: 16px;
+        color: var(--primary - text - color);
       }
-      .loading-screen {
+      .loading - screen {
         display: flex;
-        justify-content: center;
+        justify - content: center;
         padding: 40px;
       }
-      
+
       /* Responsive */
-      @media (max-width: 600px) {
-        .dual-grid { grid-template-columns: 1fr; }
-        .header-content { flex-direction: column; align-items: flex-start; }
-        .actions { width: 100%; justify-content: space-between; }
+      @media(max - width: 600px) {
+        .dual - grid { grid - template - columns: 1fr; }
+        .header - content { flex - direction: column; align - items: flex - start; }
+        .actions { width: 100 %; justify - content: space - between; }
       }
-    `;
+      `;
   }
 }
 

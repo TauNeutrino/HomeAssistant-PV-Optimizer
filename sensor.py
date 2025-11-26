@@ -76,6 +76,7 @@ async def _async_setup_device_sensors(
         DevicePowerSensor(coordinator),
         DeviceTargetStateSensor(coordinator),
         DeviceConfigurationSensor(coordinator),  # Shows all config including targets
+        DeviceAvailabilitySensor(coordinator),
     ]
     
     async_add_entities(entities)
