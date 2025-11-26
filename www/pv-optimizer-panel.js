@@ -282,8 +282,8 @@ class PvOptimizerPanel extends LitElement {
     if (!stats) return html`<div class="loading">Loading statistics...</div>`;
 
     const items = [
-      { label: "Current Surplus", value: `${(stats.current_surplus).toFixed(0)} W`, icon: "mdi:flash" },
-      { label: "Avg Surplus", value: `${stats.averaged_surplus.toFixed(0)} W`, icon: "mdi:chart-bell-curve-cumulative" },
+      { label: "Current Surplus", value: `${(stats.current_surplus).toFixed(0)} W`, rawValue: stats.current_surplus, icon: "mdi:flash" },
+      { label: "Avg Surplus", value: `${stats.averaged_surplus.toFixed(0)} W`, rawValue: stats.averaged_surplus, icon: "mdi:chart-bell-curve-cumulative" },
       { label: "Potential Load", value: `${stats.potential_power_on_devices.toFixed(0)} W`, icon: "mdi:lightning-bolt-outline" },
       { label: "Active Load", value: `${stats.measured_power_on_devices.toFixed(0)} W`, icon: "mdi:lightning-bolt" },
       { label: "Last Update", value: this._lastUpdateTimestamp ? this._lastUpdateTimestamp.toLocaleTimeString() : 'N/A', icon: "mdi:clock-outline" },
@@ -297,15 +297,22 @@ class PvOptimizerPanel extends LitElement {
           System Overview
         </h1>
         <div class="stats-grid">
-          ${items.map(item => html`
+          ${items.map(item => {
+      const isNegative = item.rawValue !== undefined && item.rawValue < 0;
+      return html`
             <div class="stat-item">
-              <div class="stat-icon"><ha-icon icon=${item.icon}></ha-icon></div>
+              <div class="stat-icon">
+                <ha-icon icon=${item.icon}></ha-icon>
+              </div>
               <div class="stat-content">
-                <div class="stat-value">${item.value}</div>
-                <div class="stat-label">${item.label}</div>
+                <div class="stat-value">
+                  ${item.value}
+                </div>
+                <div class="stat-label" style="${isNegative ? 'color: var(--error-color, red);' : ''}">${item.label}</div>
               </div>
             </div>
-          `)}
+          `;
+    })}
         </div>
       </ha-card>
     `;
