@@ -207,22 +207,28 @@ class DeviceCoordinator(DataUpdateCoordinator):
         locked_timing, locked_manual = self._get_lock_status(is_on)
         is_locked = locked_timing or locked_manual
         
-        # Update device state
-        self.device_state.update({
+        # Update state cache
+        self.device_state = {
             "is_on": is_on,
-            ATTR_MEASURED_POWER_AVG: measured_power_avg,
-            "current_power": measured_power_avg, # Renamed for clarity, still using averaged power
+            "measured_power_avg": measured_power_avg,
+            "measured_power": self._get_current_power(),
             ATTR_IS_LOCKED: is_locked,
             "is_locked_timing": locked_timing,
             "is_locked_manual": locked_manual,
-            "priority": self.device_config.get(CONF_PRIORITY, 0),
-            "min_on_time": self.device_config.get(CONF_MIN_ON_TIME, 0),
-            "min_off_time": self.device_config.get(CONF_MIN_OFF_TIME, 0),
             ATTR_PVO_LAST_TARGET_STATE: self.device_state.get(ATTR_PVO_LAST_TARGET_STATE, is_on),
             "last_update": now,
-        })
+        }
         
         return self.device_state
+        
+    def _get_current_power(self) -> float:
+        """Get current power consumption."""
+        power_sensor = self.device_config.get(CONF_MEASURED_POWER_ENTITY_ID)
+        if not power_sensor:
+            return self.device_config.get(CONF_POWER, 0.0)
+            
+        state = self.hass.states.get(power_sensor)
+        return float(state.state) if state and state.state not in ['unknown', 'unavailable'] else 0.0
 
     async def _get_averaged_power(self, now: datetime, global_config: Dict[str, Any]) -> float:
         """Get averaged power consumption over sliding window."""

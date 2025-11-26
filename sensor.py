@@ -76,7 +76,6 @@ async def _async_setup_device_sensors(
         DevicePowerSensor(coordinator),
         DeviceTargetStateSensor(coordinator),
         DeviceConfigurationSensor(coordinator),  # Shows all config including targets
-        DeviceAvailabilitySensor(coordinator),
     ]
     
     async_add_entities(entities)
@@ -199,9 +198,11 @@ class ServiceRealIdealDevicesSensor(CoordinatorEntity, SensorEntity):
             coordinator = self.coordinator.device_coordinators.get(device_name)
             if coordinator:
                 config = coordinator.device_config
+                measured_power = coordinator.data.get("measured_power", 0) if coordinator.data else 0
                 device_details.append({
                     "name": device_name,
                     "power": config.get("power", 0),
+                    "measured_power": measured_power,
                     "priority": config.get("priority", 5),
                 })
         
@@ -243,9 +244,11 @@ class ServiceSimulationIdealDevicesSensor(CoordinatorEntity, SensorEntity):
             coordinator = self.coordinator.device_coordinators.get(device_name)
             if coordinator:
                 config = coordinator.device_config
+                measured_power = coordinator.data.get("measured_power", 0) if coordinator.data else 0
                 device_details.append({
                     "name": device_name,
                     "power": config.get("power", 0),
+                    "measured_power": measured_power,
                     "priority": config.get("priority", 5),
                 })
         
