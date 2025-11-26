@@ -304,10 +304,11 @@ class DeviceCoordinator(DataUpdateCoordinator):
         """Reset the last target state to None."""
         self.device_state[ATTR_PVO_LAST_TARGET_STATE] = None
         _LOGGER.info(f"Reset target state for device: {self.device_name}")
-        # Trigger update to refresh sensors/UI
-        self.async_set_updated_data(self.device_state)
         
-        # Trigger optimization cycle on service coordinator
+        # Refresh this device coordinator first to recalculate lock status
+        await self.async_request_refresh()
+        
+        # Then trigger optimization cycle on service coordinator
         if self.service_coordinator:
             _LOGGER.info(f"Triggering optimization after reset for device: {self.device_name}")
             await self.service_coordinator.async_request_refresh()
