@@ -230,6 +230,13 @@ class DeviceCoordinator(DataUpdateCoordinator):
             self.device_state[ATTR_PVO_LAST_TARGET_STATE] = False
             self.last_switch_time = dt_util.now() # PVO initiated switch
 
+    async def reset_target_state(self) -> None:
+        """Reset the last target state to None."""
+        self.device_state[ATTR_PVO_LAST_TARGET_STATE] = None
+        _LOGGER.info(f"Reset target state for device: {self.device_name}")
+        # Trigger update to refresh sensors/UI
+        self.async_set_updated_data(self.device_state)
+
 
 class ServiceCoordinator(DataUpdateCoordinator):
     """

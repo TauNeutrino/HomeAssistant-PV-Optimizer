@@ -145,3 +145,33 @@ async def async_setup_connection(hass):
             connection.send_error(msg["id"], "update_failed", str(e))
 
     websocket_api.async_register_command(hass, handle_set_simulation_offset)
+
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): f"{DOMAIN}/reset_device",
+            vol.Required("device_name"): str,
+        }
+    )
+    @websocket_api.async_response
+    async def handle_reset_device(hass, connection, msg):
+        """Handle the 'pv_optimizer/reset_device' WebSocket command."""
+        try:
+            service_coordinator = hass.data[DOMAIN].get("service")
+            if not service_coordinator:
+                raise ValueError("Service coordinator not found")
+                
+            device_name = msg["device_name"]
+            device_coordinator = service_coordinator.device_coordinators.get(device_name)
+            
+            if not device_coordinator:
+                raise ValueError(f"Device coordinator not found: {device_name}")
+            
+            await device_coordinator.reset_target_state()
+            
+            connection.send_result(msg["id"], {"success": True})
+            
+        except Exception as e:
+            _LOGGER.error(f"Error resetting device: {e}")
+            connection.send_error(msg["id"], "reset_failed", str(e))
+
+    websocket_api.async_register_command(hass, handle_reset_device)

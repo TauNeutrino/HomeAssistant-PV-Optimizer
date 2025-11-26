@@ -179,3 +179,9 @@ The system provides granular feedback on why a device is locked:
 - **Timing Lock**: Locked due to minimum on/off time constraints.
 - **Manual Lock**: Locked due to user intervention (state mismatch with optimizer target).
 
+### 6.5. Reset Target State
+To recover from manual locks or synchronization issues, a "Reset Target State" mechanism is available:
+- **Backend**: A `button` entity for each device clears the internal `last_target_state`.
+- **Frontend**: A reset button appears on the device card when a manual lock is detected, allowing the user to clear it immediately.
+
+

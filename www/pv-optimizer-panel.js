@@ -55,6 +55,21 @@ class PvOptimizerPanel extends LitElement {
     }, 1000);
   }
 
+  async _handleResetDevice(device) {
+    if (!confirm(`Reset target state for ${device.name}? This will clear the manual lock.`)) return;
+
+    try {
+      await this.hass.callWS({
+        type: "pv_optimizer/reset_device",
+        device_name: device.name
+      });
+      // Refresh config to update UI
+      await this._fetchConfig();
+    } catch (err) {
+      this._error = `Failed to reset device: ${err.message}`;
+    }
+  }
+
   async _handleSimulationOffsetChange(e) {
     const offset = parseFloat(e.target.value);
     if (isNaN(offset)) return;
@@ -448,7 +463,19 @@ class PvOptimizerPanel extends LitElement {
           </div>
           <div class="lock-icons">
             ${state.is_locked_timing ? html`<ha-icon icon="mdi:timer-lock" title="Timing Lock (Min On/Off Time)" class="lock-icon"></ha-icon>` : ''}
-            ${state.is_locked_manual ? html`<ha-icon icon="mdi:account-lock" title="Manual Lock (User Intervention)" class="lock-icon"></ha-icon>` : ''}
+            ${state.is_locked_manual ? html`
+              <ha-icon 
+                icon="mdi:account-lock" 
+                title="Manual Lock (User Intervention)" 
+                class="lock-icon"
+              ></ha-icon>
+              <ha-icon
+                icon="mdi:restore"
+                title="Reset Target State (Clear Lock)"
+                class="reset-icon"
+                @click=${() => this._handleResetDevice(device)}
+              ></ha-icon>
+            ` : ''}
           </div>
         </div>
         
@@ -723,6 +750,17 @@ class PvOptimizerPanel extends LitElement {
       .lock-icon {
         color: var(--warning-color);
         --mdc-icon-size: 20px;
+      }
+      .reset-icon {
+        color: var(--primary-color);
+        --mdc-icon-size: 20px;
+        margin-left: 8px;
+        cursor: pointer;
+        opacity: 0.8;
+        transition: opacity 0.2s;
+      }
+      .reset-icon:hover {
+        opacity: 1;
       }
       .device-title {
         font-weight: 500;
