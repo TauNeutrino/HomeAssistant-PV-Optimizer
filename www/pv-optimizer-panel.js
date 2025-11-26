@@ -151,10 +151,16 @@ class PvOptimizerPanel extends LitElement {
       });
 
       console.log("PV Optimizer Config Response:", response);
-      console.log("Devices array:", response?.devices);
-      console.log("Number of devices:", response?.devices?.length);
+      // Sort devices by priority (ascending)
+      const sortedDevices = response.devices
+        ? Object.values(response.devices).sort((a, b) => (a.config?.priority || 99) - (b.config?.priority || 99))
+        : [];
 
-      this._config = response;
+      this._config = {
+        ...response,
+        devices: sortedDevices,
+      };
+
       if (response?.optimizer_stats?.last_update_timestamp) {
         this._lastUpdateTimestamp = new Date(response.optimizer_stats.last_update_timestamp);
         this._updateElapsedTime();
@@ -215,7 +221,8 @@ class PvOptimizerPanel extends LitElement {
   _getIdealDevices(sensorName) {
     if (!this.hass) return [];
     const entity = this._findEntityByTranslationKey(sensorName);
-    return entity?.attributes?.device_details || [];
+    return (entity?.attributes?.device_details || [])
+      .sort((a, b) => (a.priority || 99) - (b.priority || 99));
   }
 
   _getPowerBudget(key) {
@@ -545,7 +552,8 @@ class PvOptimizerPanel extends LitElement {
           <div class="devices-column">
             <h2 class="section-title">Managed Devices</h2>
             <div class="devices-grid">
-              ${this._config?.devices?.map(d => this._renderDeviceCard(d))}
+              ${this._config?.devices
+        ?.map(d => this._renderDeviceCard(d))}
             </div>
           </div>
         </div>
