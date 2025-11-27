@@ -701,7 +701,7 @@ class PvOptimizerPanel extends LitElement {
 
       .dashboard-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
         gap: 24px;
         margin-top: 24px;
         align-items: start;
@@ -711,7 +711,7 @@ class PvOptimizerPanel extends LitElement {
         display: flex;
         flex-direction: column;
         gap: 24px;
-        min-width: 400px;
+        min-width: 350px;
       }
 
       .dual-grid {
