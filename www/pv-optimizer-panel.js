@@ -551,18 +551,14 @@ class PvOptimizerPanel extends LitElement {
       }
           </div>
           <div class="lock-icons">
-            ${state.is_locked_timing ? html`<ha-icon icon="mdi:timer-lock" title="Timing Lock (Min On/Off Time)" class="lock-icon"></ha-icon>` : ''}
-            ${state.is_locked_manual ? html`
+            ${state.is_locked_timing ? html`<ha-icon icon="mdi:timer-lock" title="Timing Lock: Device cannot be controlled due to Min On/Off time constraints" class="lock-icon"></ha-icon>` : ''}
+            ${state.is_locked_manual ? html`<ha-icon icon="mdi:account-lock" title="Manual Lock: Device state was manually changed by user" class="lock-icon"></ha-icon>` : ''}
+            ${(state.is_locked_timing || state.is_locked_manual) ? html`
               <ha-icon 
-                icon="mdi:account-lock" 
-                title="Manual Lock (User Intervention)" 
-                class="lock-icon"
-              ></ha-icon>
-              <ha-icon
-                icon="mdi:restore"
-                title="Reset Target State (Clear Lock)"
+                icon="mdi:lock-open-variant" 
+                title="Reset Lock: Clear manual lock and allow optimizer to control this device" 
                 class="reset-icon"
-                @click=${() => this._handleResetDevice(device)}
+                @click=${(e) => this._handleResetDevice(e, device.name)}
               ></ha-icon>
             ` : ''}
           </div>
@@ -594,7 +590,7 @@ class PvOptimizerPanel extends LitElement {
               class="badge ${device.optimization_enabled !== false ? 'auto' : 'manual'}"
               @click=${(e) => this._handleToggleOptimization(e, device)}
               style="cursor: pointer;"
-              title="Click to toggle Optimization"
+              title="${device.optimization_enabled !== false ? 'Optimization Active: Click to disable and control manually' : 'Manual Control: Click to enable automatic optimization'}"
             >
               ${device.optimization_enabled !== false ? 'Auto' : 'Manual'}
             </span>
@@ -602,7 +598,7 @@ class PvOptimizerPanel extends LitElement {
               class="badge ${device.simulation_active ? 'sim' : 'sim-disabled'}"
               @click=${(e) => this._handleToggleSimulation(e, device)}
               style="cursor: pointer; ${!device.simulation_active ? 'background-color: var(--warning-color, #ff9800); color: black;' : ''}"
-              title="Click to toggle Simulation"
+              title="${device.simulation_active ? 'Simulation Enabled: Device participates in what-if scenarios' : 'Simulation Disabled: Device excluded from simulation calculations'}"
             >
               Sim
             </span>
@@ -614,14 +610,52 @@ class PvOptimizerPanel extends LitElement {
 
   async _handleToggleOptimization(e, device) {
     e.stopPropagation();
-    const newValue = device.optimization_enabled === false; // Toggle
-    await this._updateDeviceConfig(device.name, { optimization_enabled: newValue });
+    const badge = e.currentTarget;
+
+    // Disable badge during operation
+    badge.style.opacity = '0.5';
+    badge.style.pointerEvents = 'none';
+
+    try {
+      const newValue = device.optimization_enabled === false; // Toggle
+      await this._updateDeviceConfig(device.name, { optimization_enabled: newValue });
+
+      // Show success toast
+      this._showToast(`${device.name}: Optimization ${newValue ? 'enabled' : 'disabled'}`, 'success');
+    } catch (err) {
+      // Restore on error
+      badge.style.opacity = '';
+      badge.style.pointerEvents = '';
+    } finally {
+      // Always restore after operation
+      badge.style.opacity = '';
+      badge.style.pointerEvents = '';
+    }
   }
 
   async _handleToggleSimulation(e, device) {
     e.stopPropagation();
-    const newValue = !device.simulation_active; // Toggle
-    await this._updateDeviceConfig(device.name, { simulation_active: newValue });
+    const badge = e.currentTarget;
+
+    // Disable badge during operation
+    badge.style.opacity = '0.5';
+    badge.style.pointerEvents = 'none';
+
+    try {
+      const newValue = !device.simulation_active; // Toggle
+      await this._updateDeviceConfig(device.name, { simulation_active: newValue });
+
+      // Show success toast
+      this._showToast(`${device.name}: Simulation ${newValue ? 'enabled' : 'disabled'}`, 'success');
+    } catch (err) {
+      // Restore on error
+      badge.style.opacity = '';
+      badge.style.pointerEvents = '';
+    } finally {
+      // Always restore after operation
+      badge.style.opacity = '';
+      badge.style.pointerEvents = '';
+    }
   }
 
   async _updateDeviceConfig(deviceName, updates) {
@@ -632,11 +666,27 @@ class PvOptimizerPanel extends LitElement {
         updates: updates
       });
       // Refresh config to reflect changes
-      setTimeout(() => this._fetchConfig(), 100);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await this._fetchConfig();
+      // Force re-render to restore badge content
+      this.requestUpdate();
     } catch (err) {
       console.error("Failed to update device config:", err);
-      alert(`Failed to update config: ${err.message}`);
+      this._showToast(`Failed to update ${deviceName}: ${err.message}`, 'error');
+      throw err; // Re-throw so callers can handle
     }
+  }
+
+  _showToast(message, type = 'info') {
+    const event = new CustomEvent('hass-notification', {
+      detail: {
+        message: message,
+        duration: type === 'error' ? 5000 : 3000,
+      },
+      bubbles: true,
+      composed: true,
+    });
+    this.dispatchEvent(event);
   }
 
   render() {
@@ -980,8 +1030,6 @@ class PvOptimizerPanel extends LitElement {
         gap: 8px;
         flex: 1;
       }
-      .device-name {
-      }
       .device-meta {
         color: var(--secondary-text-color);
         font-size: 11px;
@@ -1009,10 +1057,41 @@ class PvOptimizerPanel extends LitElement {
       }
       
       /* Responsive */
+      @media (max-width: 1200px) {
+        .dashboard-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      
+      @media (max-width: 768px) {
+        .dual-grid { 
+          grid-template-columns: 1fr; 
+        }
+        .devices-grid {
+          grid-template-columns: 1fr;
+        }
+        .device-stats {
+          flex-direction: column;
+          gap: 4px;
+        }
+      }
+      
       @media (max-width: 600px) {
-        .dual-grid { grid-template-columns: 1fr; }
-        .header-content { flex-direction: column; align-items: flex-start; }
-        .actions { width: 100%; justify-content: space-between; }
+        .header-content { 
+          flex-direction: column; 
+          align-items: flex-start; 
+          gap: 8px;
+        }
+        .actions { 
+          width: 100%; 
+          justify-content: space-between; 
+        }
+        .card-header {
+          font-size: 16px;
+        }
+        .device-card {
+          padding: 12px;
+        }
       }
     `;
   }
