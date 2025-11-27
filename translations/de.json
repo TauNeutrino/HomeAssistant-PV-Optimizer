@@ -261,7 +261,10 @@
       "potential_load": "Nominalleistung",
       "active_load": "Aktive Last",
       "last_update": "Letzte Aktualisierung",
-      "age": "Alter"
+      "age": "Alter",
+      "tab_overview": "Übersicht",
+      "tab_charts": "Diagramme",
+      "tab_statistics": "Statistik"
     },
     "managed_devices": {
       "title": "Verwaltete Geräte",
@@ -316,6 +319,20 @@
       "configuration": "Konfiguration",
       "system_ready": "System bereit",
       "system_issue": "System-Problem"
+    },
+    "charts": {
+      "surplus_trend": "Überschuss-Trend",
+      "power_budget": "Leistungsbudget",
+      "device_timeline": "Geräteaktivität",
+      "active_devices_power": "Leistung aktiver Geräte"
+    },
+    "statistics": {
+      "total_events": "Optimierungsereignisse",
+      "utilization_rate": "Überschussnutzung",
+      "most_active": "Aktivstes Gerät",
+      "peak_time": "Spitzenzeit",
+      "events": "Ereignisse",
+      "snapshots": "Datenpunkte"
     }
   }
 }

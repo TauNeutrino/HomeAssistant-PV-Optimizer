@@ -261,7 +261,10 @@
       "potential_load": "Potential Load",
       "active_load": "Active Load",
       "last_update": "Last Update",
-      "age": "Age"
+      "age": "Age",
+      "tab_overview": "Overview",
+      "tab_charts": "Charts",
+      "tab_statistics": "Statistics"
     },
     "managed_devices": {
       "title": "Managed Devices",
@@ -316,6 +319,20 @@
       "configuration": "Configuration",
       "system_ready": "System Ready",
       "system_issue": "System Issue"
+    },
+    "charts": {
+      "surplus_trend": "Surplus Trend",
+      "power_budget": "Power Budget",
+      "device_timeline": "Device Activity",
+      "active_devices_power": "Active Devices Power"
+    },
+    "statistics": {
+      "total_events": "Total Optimization Events",
+      "utilization_rate": "Surplus Utilization",
+      "most_active": "Most Active Device",
+      "peak_time": "Peak Optimization Time",
+      "events": "Events",
+      "snapshots": "Data Points"
     }
   }
 }

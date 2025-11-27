@@ -117,7 +117,75 @@ async def async_setup_connection(hass):
                 f"PV Optimizer not ready: {str(e)}"
             )
 
-    # Register the command with Home Assistant's WebSocket API
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): f"{DOMAIN}/history",
+            vol.Optional("hours", default=24): int,
+        }
+    )
+    @websocket_api.async_response
+    async def handle_get_history(hass, connection, msg):
+        """Handle the 'pv_optimizer/history' WebSocket command."""
+        try:
+            # Get service entry
+            service_coordinator = hass.data[DOMAIN].get("service")
+            if not service_coordinator:
+                connection.send_error(msg["id"], "not_found", "Service coordinator not found")
+                return
+            
+            # Get history tracker
+            entry_id = service_coordinator.config_entry.entry_id
+            history_tracker = hass.data[DOMAIN].get(f"{entry_id}_history")
+            
+            if not history_tracker:
+                connection.send_error(msg["id"], "not_found", "History tracker not found")
+                return
+            
+            # Get snapshots for requested time range
+            hours = msg.get("hours", 24)
+            snapshots = history_tracker.get_snapshots(hours)
+            
+            connection.send_result(msg["id"], {
+                "snapshots": snapshots,
+                "count": len(snapshots)
+            })
+            
+        except Exception as err:
+            _LOGGER.error("Error getting history: %s", err)
+            connection.send_error(msg["id"], "unknown_error", str(err))
+    
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): f"{DOMAIN}/statistics",
+        }
+    )
+    @websocket_api.async_response
+    async def handle_get_statistics(hass, connection, msg):
+        """Handle the 'pv_optimizer/statistics' WebSocket command."""
+        try:
+            # Get service entry
+            service_coordinator = hass.data[DOMAIN].get("service")
+            if not service_coordinator:
+                connection.send_error(msg["id"], "not_found", "Service coordinator not found")
+                return
+            
+            # Get history tracker
+            entry_id = service_coordinator.config_entry.entry_id
+            history_tracker = hass.data[DOMAIN].get(f"{entry_id}_history")
+            
+            if not history_tracker:
+                connection.send_error(msg["id"], "not_found", "History tracker not found")
+                return
+            
+            # Get calculated statistics
+            statistics = history_tracker.get_statistics()
+            
+            connection.send_result(msg["id"], statistics)
+            
+        except Exception as err:
+            _LOGGER.error("Error getting statistics: %s", err)
+            connection.send_error(msg["id"], "unknown_error", str(err))
+    
     # Register the command with Home Assistant's WebSocket API
     websocket_api.async_register_command(hass, handle_get_config)
 
@@ -207,3 +275,9 @@ async def async_setup_connection(hass):
             connection.send_error(msg["id"], "update_failed", str(e))
 
     websocket_api.async_register_command(hass, handle_update_device_config)
+    websocket_api.async_register_command(hass, handle_reset_device)
+    websocket_api.async_register_command(hass, handle_set_simulation_offset)
+    websocket_api.async_register_command(hass, handle_get_history)
+    websocket_api.async_register_command(hass, handle_get_statistics)
+    
+    _LOGGER.info("WebSocket API handlers registered for PV Optimizer")

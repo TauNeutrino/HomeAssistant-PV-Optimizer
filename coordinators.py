@@ -94,6 +94,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
         self.config_entry = config_entry
         self.device_config = device_config
         self.device_name = device_name
+        self.device_id = None  # Will be populated on first update
         
         # Device instance for state reading/control
         self.device_instance: Optional[PVDevice] = None
@@ -225,7 +226,8 @@ class DeviceCoordinator(DataUpdateCoordinator):
         # Retry device_id lookup if it's None (race condition handling)
         if self.device_id is None:
             dev_reg = dr.async_get(self.hass)
-            identifier = (DOMAIN, normalize_device_name(self.device_name))
+            normalized_name = normalize_device_name(self.device_name)
+            identifier = (DOMAIN, f"{self.config_entry.entry_id}_{normalized_name}")
             
             _LOGGER.debug(
                 "Attempting device_id lookup for %s with identifier %s",

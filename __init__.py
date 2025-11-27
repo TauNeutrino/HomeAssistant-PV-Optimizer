@@ -20,6 +20,7 @@ from .const import DOMAIN
 from .coordinators import ServiceCoordinator,  DeviceCoordinator
 from .panel import async_setup_panel
 from .connection import async_setup_connection
+from .history_tracker import HistoryTracker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -96,6 +97,11 @@ async def _async_setup_service_entry(hass: HomeAssistant, entry: ConfigEntry) ->
     
     # Initial refresh
     await coordinator.async_refresh()
+    
+    # Set up history tracker
+    history_tracker = HistoryTracker(hass, entry)
+    await history_tracker.async_setup()
+    hass.data[DOMAIN][f"{entry.entry_id}_history"] = history_tracker
     
     # Register update listener
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
@@ -196,13 +202,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     if entry_type == "service":
         # Unload service entry
+        coordinator = hass.data[DOMAIN].pop(entry.entry_id, None)
+        hass.data[DOMAIN].pop("service", None)
+        
+        # Stop history tracker
+        history_tracker = hass.data[DOMAIN].pop(f"{entry.entry_id}_history", None)
+        if history_tracker:
+            await history_tracker.async_stop()
+        
         unload_ok = await hass.config_entries.async_unload_platforms(entry, ["sensor"])
-        
-        if unload_ok:
-            # Remove from hass.data
-            hass.data[DOMAIN].pop("service", None)
-            hass.data[DOMAIN].pop(entry.entry_id, None)
-        
         return unload_ok
     
     else:

@@ -25,6 +25,9 @@ class PvOptimizerPanel extends LitElement {
       _showComparison: { type: Boolean, state: true },
       _lastUpdateTimestamp: { type: Object, state: true },
       _elapsedSeconds: { type: Number, state: true },
+      _currentTab: { type: String, state: true },
+      _historyData: { type: Object, state: true },
+      _statisticsData: { type: Object, state: true },
     };
   }
 
@@ -38,7 +41,9 @@ class PvOptimizerPanel extends LitElement {
     this._secondInterval = null;
     this._lastUpdateTimestamp = null;
     this._elapsedSeconds = null;
-    this._translations = null;
+    this._currentTab = 'overview';
+    this._historyData = null;
+    this._statisticsData = null;
   }
 
   async connectedCallback() {
@@ -199,11 +204,42 @@ class PvOptimizerPanel extends LitElement {
       } else {
         this._lastUpdateTimestamp = null;
       }
+      this._lastUpdateTimestamp = new Date();
+
+      // Also refresh active tab data
+      if (this._currentTab === 'charts') {
+        this._fetchHistory();
+      } else if (this._currentTab === 'stats') {
+        this._fetchStatistics();
+      }
+    } catch (err) {
+      console.error("Error fetching config:", err);
+      this._error = err.message;
+    } finally {
       this._loading = false;
-    } catch (error) {
-      console.error("PV Optimizer: Failed to get config:", error);
-      this._error = `Failed to load configuration: ${error.message}`;
-      this._loading = false;
+    }
+  }
+
+  async _fetchHistory() {
+    try {
+      const response = await this.hass.callWS({
+        type: "pv_optimizer/history",
+        hours: 24
+      });
+      this._historyData = response;
+    } catch (err) {
+      console.error("Error fetching history:", err);
+    }
+  }
+
+  async _fetchStatistics() {
+    try {
+      const response = await this.hass.callWS({
+        type: "pv_optimizer/statistics"
+      });
+      this._statisticsData = response;
+    } catch (err) {
+      console.error("Error fetching statistics:", err);
     }
   }
 
@@ -310,6 +346,41 @@ class PvOptimizerPanel extends LitElement {
   _renderGlobalConfigCard() {
     if (!this._config?.global_config) return html``;
 
+    return html`
+      <ha-card class="system-overview-card">
+        <div class="card-header">
+          <div class="name">${this.t('system_overview.title', 'System Overview')}</div>
+          <div class="tab-selector">
+            <button 
+              class="${this._currentTab === 'overview' ? 'active' : ''}" 
+              @click=${() => this._currentTab = 'overview'}
+            >
+              ${this.t('system_overview.tab_overview', 'Overview')}
+            </button>
+            <button 
+              class="${this._currentTab === 'charts' ? 'active' : ''}" 
+              @click=${() => { this._currentTab = 'charts'; this._fetchHistory(); }}
+            >
+              ${this.t('system_overview.tab_charts', 'Charts')}
+            </button>
+            <button 
+              class="${this._currentTab === 'stats' ? 'active' : ''}" 
+              @click=${() => { this._currentTab = 'stats'; this._fetchStatistics(); }}
+            >
+              ${this.t('system_overview.tab_statistics', 'Statistics')}
+            </button>
+          </div>
+        </div>
+        <div class="card-content">
+          ${this._currentTab === 'overview' ? this._renderOverview() : ''}
+          ${this._currentTab === 'charts' ? this._renderCharts() : ''}
+          ${this._currentTab === 'stats' ? this._renderStatistics() : ''}
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _renderOverview() {
     const stats = this._config.optimizer_stats;
     if (!stats) return html`<div class="loading">Loading statistics...</div>`;
 
@@ -323,30 +394,107 @@ class PvOptimizerPanel extends LitElement {
     ];
 
     return html`
-      <ha-card class="stats-card">
-        <h1 class="card-header">
-          <ha-icon icon="mdi:chart-dashboard"></ha-icon>
-          ${this.t('system_overview.title', 'System Overview')}
-        </h1>
-        <div class="stats-grid">
-          ${items.map(item => {
-      const isNegative = item.rawValue !== undefined && item.rawValue < 0;
-      return html`
-            <div class="stat-item">
-              <div class="stat-icon">
-                <ha-icon icon=${item.icon}></ha-icon>
-              </div>
-              <div class="stat-content">
-                <div class="stat-value">
-                  ${item.value}
-                </div>
-                <div class="stat-label" style="${isNegative ? 'color: var(--error-color, red);' : ''}">${item.label}</div>
-              </div>
+      <div class="stats-grid">
+        ${items.map(item => html`
+          <div class="stat-item">
+            <div class="stat-icon">
+              <ha-icon icon="${item.icon}"></ha-icon>
             </div>
-          `;
-    })}
-        </div>
-      </ha-card>
+            <div class="stat-content">
+              <span class="stat-label">${item.label}</span>
+              <span class="stat-value ${item.rawValue < 0 ? 'negative' : ''}">${item.value}</span>
+            </div>
+          </div>
+        `)}
+      </div>
+    `;
+  }
+
+  _renderCharts() {
+    if (!this._historyData) return html`<div class="loading">Loading charts...</div>`;
+
+    // Prepare data for ApexCharts
+    const snapshots = this._historyData.snapshots || [];
+    if (snapshots.length === 0) return html`<div class="info">No historical data available yet.</div>`;
+
+    // Extract series data
+    const timestamps = snapshots.map(s => new Date(s.timestamp).getTime());
+
+    // 1. Surplus & Budget Series
+    const surplusSeries = snapshots.map(s => [new Date(s.timestamp).getTime(), s.averaged_surplus]);
+    const budgetSeries = snapshots.map(s => [new Date(s.timestamp).getTime(), s.power_budget]);
+
+    // 2. Active Devices Stacked Series
+    // Get all unique device names
+    const deviceNames = new Set();
+    snapshots.forEach(s => {
+      s.active_devices.forEach(d => deviceNames.add(d.name));
+    });
+
+    const deviceSeries = Array.from(deviceNames).map(name => {
+      return {
+        name: name,
+        data: snapshots.map(s => {
+          const device = s.active_devices.find(d => d.name === name);
+          return [new Date(s.timestamp).getTime(), device ? device.measured_power : 0];
+        })
+      };
+    });
+
+    return html`
+      <div class="charts-container">
+        <!-- Surplus Trend Chart -->
+        <apexcharts-card
+          .hass=${this.hass}
+          chart_type="line"
+          graph_span="24h"
+          header='{"show": true, "title": "${this.t('charts.surplus_trend', 'Surplus Trend')}", "show_states": true}'
+          series='[
+            {"data": ${JSON.stringify(surplusSeries)}, "name": "Avg Surplus", "color": "#2196f3", "type": "line"},
+            {"data": ${JSON.stringify(budgetSeries)}, "name": "Power Budget", "color": "#ff9800", "type": "line"}
+          ]'
+        ></apexcharts-card>
+
+        <!-- Active Devices Stacked Area Chart -->
+        <apexcharts-card
+          .hass=${this.hass}
+          chart_type="area"
+          stacked="true"
+          graph_span="24h"
+          header='{"show": true, "title": "${this.t('charts.active_devices_power', 'Active Devices Power')}", "show_states": true}'
+          series='${JSON.stringify(deviceSeries)}'
+        ></apexcharts-card>
+      </div>
+    `;
+  }
+
+  _renderStatistics() {
+    if (!this._statisticsData) return html`<div class="loading">Loading statistics...</div>`;
+
+    const stats = this._statisticsData;
+
+    const items = [
+      { label: this.t('statistics.total_events', 'Total Optimization Events'), value: stats.total_events ?? '-', icon: "mdi:counter" },
+      { label: this.t('statistics.utilization_rate', 'Surplus Utilization'), value: stats.utilization_rate !== undefined ? `${stats.utilization_rate}%` : '-', icon: "mdi:percent" },
+      { label: this.t('statistics.most_active', 'Most Active Device'), value: stats.most_active_device || '-', icon: "mdi:trophy" },
+      { label: this.t('statistics.peak_time', 'Peak Optimization Time'), value: stats.peak_hour !== undefined ? `${stats.peak_hour}:00` : '-', icon: "mdi:clock-time-eight" },
+      { label: this.t('statistics.snapshots', 'Data Points'), value: stats.snapshots_count ?? '-', icon: "mdi:database" },
+    ];
+
+    return html`
+      <div class="stats-grid">
+        ${items.map(item => html`
+          <div class="stat-item">
+            <div class="stat-icon">
+              <ha-icon icon="${item.icon}"></ha-icon>
+            </div>
+            <div class="stat-content">
+              <span class="stat-label">${item.label}</span>
+              <span class="stat-value">${item.value}</span>
+            </div>
+          </div>
+        `)}
+      </div>
     `;
   }
 
@@ -424,7 +572,7 @@ class PvOptimizerPanel extends LitElement {
       <ha-card class="ideal-devices-card" style="border-top: 4px solid var(${colorVar})">
         <h1 class="card-header">
           <ha-icon icon=${icon}></ha-icon>
-          ${title}
+          <span style="flex: 1; margin-left: 10px;">${title}</span>
           ${sensorKey === 'simulation_ideal_devices' ? html`
             <div style="margin-left: auto; display: flex; align-items: center;">
               <ha-textfield
@@ -579,7 +727,7 @@ class PvOptimizerPanel extends LitElement {
           <div class="device-title" style="${isUnavailable ? 'text-decoration: line-through; opacity: 0.6;' : ''}">
             <ha-icon icon=${isOn ? "mdi:power-plug" : "mdi:power-plug-off"} class="device-icon"></ha-icon>
             ${state.device_id
-        ? html`<a href="/config/devices/device/${state.device_id}" target="_blank" style="color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor;">${device.name}</a>`
+        ? html`<a href="/config/devices/device/${state.device_id}" target="_blank" style="color: inherit; text-decoration: none;">${device.name}</a>`
         : device.name
       }
           </div>
@@ -891,7 +1039,7 @@ class PvOptimizerPanel extends LitElement {
       /* Stats Grid */
       .stats-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
         gap: 16px;
         padding: 16px;
       }
@@ -899,6 +1047,11 @@ class PvOptimizerPanel extends LitElement {
         display: flex;
         align-items: center;
         gap: 12px;
+      }
+      .stat-content {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
       }
       .stat-icon {
         background: var(--secondary-background-color);
@@ -983,6 +1136,14 @@ class PvOptimizerPanel extends LitElement {
         display: flex;
         align-items: center;
         gap: 8px;
+      }
+      .device-title a {
+        color: inherit;
+        text-decoration: none;
+        border-bottom: none;
+      }
+      .device-title a:hover {
+        text-decoration: underline;
       }
       .device-body {
         margin-bottom: 12px;
@@ -1109,18 +1270,87 @@ class PvOptimizerPanel extends LitElement {
         }
       }
       
+      .dual-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+
+      /* Tab Selector Styles */
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      
+      .tab-selector {
+        display: flex;
+        background: rgba(0,0,0,0.1);
+        border-radius: 8px;
+        padding: 4px;
+        gap: 4px;
+      }
+      
+      .tab-selector button {
+        background: transparent;
+        border: none;
+        color: var(--secondary-text-color);
+        padding: 6px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.2s ease;
+      }
+      
+      .tab-selector button:hover {
+        background: rgba(255,255,255,0.05);
+        color: var(--primary-text-color);
+      }
+      
+      .tab-selector button.active {
+        background: var(--primary-color);
+        color: white;
+      }
+      
+      /* Charts Container */
+      .charts-container {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+      
+      apexcharts-card {
+        background: transparent !important;
+        box-shadow: none !important;
+        border: 1px solid var(--divider-color);
+      }
+
       @media (max-width: 600px) {
         .header-content { 
           flex-direction: column; 
           align-items: flex-start; 
-          gap: 8px;
+          gap: 12px;
         }
         .actions { 
           width: 100%; 
           justify-content: space-between; 
         }
         .card-header {
-          font-size: 16px;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 12px;
+        }
+        .tab-selector {
+          width: 100%;
+          justify-content: space-between;
+        }
+        .tab-selector button {
+          flex: 1;
+          text-align: center;
+          padding: 8px 4px;
+          font-size: 0.9em;
         }
         .device-card {
           padding: 12px;
