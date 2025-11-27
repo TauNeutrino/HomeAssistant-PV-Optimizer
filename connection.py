@@ -175,3 +175,35 @@ async def async_setup_connection(hass):
             connection.send_error(msg["id"], "reset_failed", str(e))
 
     websocket_api.async_register_command(hass, handle_reset_device)
+
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): f"{DOMAIN}/update_device_config",
+            vol.Required("device_name"): str,
+            vol.Required("updates"): dict,
+        }
+    )
+    @websocket_api.async_response
+    async def handle_update_device_config(hass, connection, msg):
+        """Handle the 'pv_optimizer/update_device_config' WebSocket command."""
+        try:
+            service_coordinator = hass.data[DOMAIN].get("service")
+            if not service_coordinator:
+                raise ValueError("Service coordinator not found")
+                
+            device_name = msg["device_name"]
+            device_coordinator = service_coordinator.device_coordinators.get(device_name)
+            
+            if not device_coordinator:
+                raise ValueError(f"Device coordinator not found: {device_name}")
+            
+            updates = msg["updates"]
+            await device_coordinator.async_update_device_config(updates)
+            
+            connection.send_result(msg["id"], {"success": True})
+            
+        except Exception as e:
+            _LOGGER.error(f"Error updating device config: {e}")
+            connection.send_error(msg["id"], "update_failed", str(e))
+
+    websocket_api.async_register_command(hass, handle_update_device_config)

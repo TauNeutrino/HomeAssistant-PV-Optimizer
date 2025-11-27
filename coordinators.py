@@ -329,6 +329,24 @@ class DeviceCoordinator(DataUpdateCoordinator):
             
         return locked_timing, locked_manual
 
+    async def async_update_device_config(self, updates: Dict[str, Any]) -> None:
+        """Update device configuration and persist to config entry."""
+        self.device_config.update(updates)
+        
+        # Update config entry
+        new_data = dict(self.config_entry.data)
+        new_data["device_config"] = self.device_config
+        
+        self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+        _LOGGER.info(f"Updated config for device {self.device_name}: {updates}")
+        
+        # Trigger refresh
+        await self.async_request_refresh()
+        
+        # Trigger service optimization if needed
+        if self.service_coordinator:
+            await self.service_coordinator.async_request_refresh()
+
     def update_config(self, key: str, value: Any) -> None:
         """Update device configuration in memory."""
         self.device_config[key] = value

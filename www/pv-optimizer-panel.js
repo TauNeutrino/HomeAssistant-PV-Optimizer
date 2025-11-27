@@ -548,12 +548,53 @@ class PvOptimizerPanel extends LitElement {
 
         <div class="device-footer">
           <div class="status-badges">
-            ${device.optimization_enabled ? html`<span class="badge success">Auto</span>` : html`<span class="badge warning">Manual</span>`}
-            ${device.simulation_active ? html`<span class="badge info">Sim</span>` : ''}
+            <span 
+              class="badge ${device.optimization_enabled !== false ? 'auto' : 'manual'}"
+              @click=${(e) => this._handleToggleOptimization(e, device)}
+              style="cursor: pointer;"
+              title="Click to toggle Optimization"
+            >
+              ${device.optimization_enabled !== false ? 'Auto' : 'Manual'}
+            </span>
+            <span 
+              class="badge ${device.simulation_active ? 'sim' : 'sim-disabled'}"
+              @click=${(e) => this._handleToggleSimulation(e, device)}
+              style="cursor: pointer; ${!device.simulation_active ? 'background-color: var(--warning-color, #ff9800); color: black;' : ''}"
+              title="Click to toggle Simulation"
+            >
+              Sim
+            </span>
           </div>
         </div>
       </ha-card>
     `;
+  }
+
+  async _handleToggleOptimization(e, device) {
+    e.stopPropagation();
+    const newValue = device.optimization_enabled === false; // Toggle
+    await this._updateDeviceConfig(device.name, { optimization_enabled: newValue });
+  }
+
+  async _handleToggleSimulation(e, device) {
+    e.stopPropagation();
+    const newValue = !device.simulation_active; // Toggle
+    await this._updateDeviceConfig(device.name, { simulation_active: newValue });
+  }
+
+  async _updateDeviceConfig(deviceName, updates) {
+    try {
+      await this.hass.callWS({
+        type: "pv_optimizer/update_device_config",
+        device_name: deviceName,
+        updates: updates
+      });
+      // Refresh config to reflect changes
+      setTimeout(() => this._fetchConfig(), 100);
+    } catch (err) {
+      console.error("Failed to update device config:", err);
+      alert(`Failed to update config: ${err.message}`);
+    }
   }
 
   render() {
@@ -846,9 +887,9 @@ class PvOptimizerPanel extends LitElement {
         border-radius: 4px;
         font-weight: 500;
       }
-      .badge.success { background: rgba(76, 175, 80, 0.15); color: var(--success-color); }
-      .badge.warning { background: rgba(255, 152, 0, 0.15); color: var(--warning-color); }
-      .badge.info { background: rgba(33, 150, 243, 0.15); color: var(--info-color); }
+      .badge.success, .badge.auto { background: rgba(76, 175, 80, 0.15); color: var(--success-color); }
+      .badge.warning, .badge.manual { background: rgba(255, 152, 0, 0.15); color: var(--warning-color); }
+      .badge.info, .badge.sim { background: rgba(33, 150, 243, 0.15); color: var(--info-color); }
 
       /* Progress Bar */
       .budget-bar {
