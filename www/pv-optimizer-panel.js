@@ -352,10 +352,18 @@ class PvOptimizerPanel extends LitElement {
       lockedOnDevices.forEach(d => {
         const config = d.config || {};
         const state = d.state || {};
-        // Use measured power if available for consistency with other devices
-        const power = state.measured_power !== undefined ? state.measured_power : (config.power || 0);
 
-        budget += power;
+        // Determine power to use based on card type
+        // Simulation: Always use nominal power
+        // Real: Use measured power if available, else nominal
+        let powerToUse;
+        if (sensorKey === 'simulation_ideal_devices') {
+          powerToUse = config.power || 0;
+        } else {
+          powerToUse = state.measured_power !== undefined ? state.measured_power : (config.power || 0);
+        }
+
+        budget += powerToUse;
         devices.push({
           name: config.name,
           power: config.power || 0,
@@ -368,7 +376,16 @@ class PvOptimizerPanel extends LitElement {
       devices.sort((a, b) => (a.priority || 99) - (b.priority || 99));
     }
 
-    const totalPower = devices.reduce((sum, d) => sum + (d.measured_power !== undefined ? d.measured_power : d.power || 0), 0);
+    // Calculate total power for the bar
+    const totalPower = devices.reduce((sum, d) => {
+      let powerToUse;
+      if (sensorKey === 'simulation_ideal_devices') {
+        powerToUse = d.power || 0;
+      } else {
+        powerToUse = d.measured_power !== undefined ? d.measured_power : (d.power || 0);
+      }
+      return sum + powerToUse;
+    }, 0);
     const usagePercent = budget > 0 ? Math.min((totalPower / budget) * 100, 100) : 0;
 
     return html`
@@ -401,13 +418,26 @@ class PvOptimizerPanel extends LitElement {
             <div class="progress-track" style="display: flex; overflow: hidden;">
               ${budget > 0 ? html`
                 ${devices.map((device, index) => {
-      const power = device.measured_power !== undefined ? device.measured_power : device.power;
+      let power;
+      if (sensorKey === 'simulation_ideal_devices') {
+        power = device.power || 0;
+      } else {
+        power = device.measured_power !== undefined ? device.measured_power : (device.power || 0);
+      }
       const width = Math.min((power / budget) * 100, 100);
       const color = this._getDeviceColor(index);
       return html`<div class="progress-fill" style="width: ${width}%; background-color: ${color}; border-right: 1px solid rgba(255,255,255,0.2);" title="${device.name}: ${power}W"></div>`;
     })}
                 ${(() => {
-          const usedPower = devices.reduce((sum, d) => sum + (d.measured_power !== undefined ? d.measured_power : d.power || 0), 0);
+          const usedPower = devices.reduce((sum, d) => {
+            let power;
+            if (sensorKey === 'simulation_ideal_devices') {
+              power = d.power || 0;
+            } else {
+              power = d.measured_power !== undefined ? d.measured_power : (d.power || 0);
+            }
+            return sum + power;
+          }, 0);
           const remaining = Math.max(0, budget - usedPower);
           if (remaining > 0) {
             const width = Math.min((remaining / budget) * 100, 100);
