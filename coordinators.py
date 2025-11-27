@@ -210,6 +210,24 @@ class DeviceCoordinator(DataUpdateCoordinator):
         # Check availability of underlying entities
         is_available = self._check_availability()
         
+        # Behavior Refinement: If optimization is disabled, device is ON (via optimizer), 
+        # and locks are clear -> Turn OFF
+        optimization_enabled = self.device_config.get("optimization_enabled", True)
+        last_target = self.device_state.get(ATTR_PVO_LAST_TARGET_STATE)
+        
+        if not optimization_enabled and is_on and last_target is True and not is_locked:
+             _LOGGER.info(f"{self.device_name}: Optimization disabled and locks cleared. Turning OFF device.")
+             if self.device_instance:
+                 # We need to schedule this task to avoid blocking the update
+                 self.hass.async_create_task(self.device_instance.deactivate())
+                 # Update local state immediately for responsiveness
+                 is_on = False
+                 self.device_state[ATTR_PVO_LAST_TARGET_STATE] = False
+                 self.last_switch_time = now
+                 # Recalculate lock status with new state (though likely irrelevant as it's off)
+                 locked_timing, locked_manual = self._get_lock_status(is_on)
+                 is_locked = locked_timing or locked_manual
+
         # Update state cache
         self.device_state = {
             "is_on": is_on,
@@ -331,6 +349,26 @@ class DeviceCoordinator(DataUpdateCoordinator):
 
     async def async_update_device_config(self, updates: Dict[str, Any]) -> None:
         """Update device configuration and persist to config entry."""
+        # Check for specific transitions before updating config
+        if "optimization_enabled" in updates and updates["optimization_enabled"] is False:
+            # Optimization being disabled
+            last_target = self.device_state.get(ATTR_PVO_LAST_TARGET_STATE)
+            is_locked_manual = self.device_state.get("is_locked_manual", False)
+            
+            if last_target is True and not is_locked_manual:
+                # Check timing lock
+                is_on = self.device_instance.is_on() if self.device_instance else False
+                locked_timing, _ = self._get_lock_status(is_on)
+                
+                if not locked_timing:
+                    _LOGGER.info(f"{self.device_name}: Optimization disabled. Turning OFF device immediately.")
+                    if self.device_instance:
+                        await self.device_instance.deactivate()
+                        self.device_state[ATTR_PVO_LAST_TARGET_STATE] = False
+                        self.last_switch_time = dt_util.now()
+                else:
+                    _LOGGER.info(f"{self.device_name}: Optimization disabled, but timing lock active. Will turn off when lock expires.")
+
         self.device_config.update(updates)
         
         # Update config entry
