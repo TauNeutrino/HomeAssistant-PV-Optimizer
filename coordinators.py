@@ -222,22 +222,31 @@ class DeviceCoordinator(DataUpdateCoordinator):
         # Check availability of underlying entities
         is_available = self._check_availability()
 
-        # Retry fetching device_id if missing (device might have been created after coordinator startup)
-        if getattr(self, "device_id", None) is None:
+        # Retry device_id lookup if it's None (race condition handling)
+        if self.device_id is None:
             dev_reg = dr.async_get(self.hass)
-            normalized_name = normalize_device_name(self.device_name)
-            identifier = (DOMAIN, f"{self.config_entry.entry_id}_{normalized_name}")
+            identifier = (DOMAIN, normalize_device_name(self.device_name))
             
-            device = dev_reg.async_get_device(identifiers={identifier})
-            if device:
-                self.device_id = device.id
-                _LOGGER.debug(f"{self.device_name}: Found device ID: {self.device_id}")
+            _LOGGER.debug(
+                "Attempting device_id lookup for %s with identifier %s",
+                self.device_name,
+                identifier
+            )
+            
+            device_entry = dev_reg.async_get_device(identifiers={identifier})
+            if device_entry:
+                self.device_id = device_entry.id
+                _LOGGER.info("Found device_id %s for %s", self.device_id, self.device_name)
             else:
-                 _LOGGER.debug(f"{self.device_name}: Device not found in registry yet. Looking for identifier: {identifier}")
-                 # Debug: List all devices for this config entry
-                 devices = [d for d in dev_reg.devices.values() if self.config_entry.entry_id in d.config_entries]
-                 for d in devices:
-                     _LOGGER.debug(f"Available device: {d.name} - Identifiers: {d.identifiers}")
+                _LOGGER.debug(
+                    "Device not found for %s. Available devices for this entry: %s",
+                    self.device_name,
+                    [
+                        (dev.name, dev.identifiers)
+                        for dev in dev_reg.devices.values()
+                        if self.config_entry.entry_id in dev.config_entries
+                    ]
+                )
         
         # Behavior Refinement: If optimization is disabled, device is ON (via optimizer), 
         # and locks are clear -> Turn OFF
