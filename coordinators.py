@@ -207,6 +207,9 @@ class DeviceCoordinator(DataUpdateCoordinator):
         locked_timing, locked_manual = self._get_lock_status(is_on)
         is_locked = locked_timing or locked_manual
         
+        # Check availability of underlying entities
+        is_available = self._check_availability()
+        
         # Update state cache
         self.device_state = {
             "is_on": is_on,
@@ -215,12 +218,46 @@ class DeviceCoordinator(DataUpdateCoordinator):
             ATTR_IS_LOCKED: is_locked,
             "is_locked_timing": locked_timing,
             "is_locked_manual": locked_manual,
+            "is_available": is_available,
             ATTR_PVO_LAST_TARGET_STATE: self.device_state.get(ATTR_PVO_LAST_TARGET_STATE, is_on),
             "last_update": now,
         }
         
         return self.device_state
         
+    def _check_availability(self) -> bool:
+        """Check if underlying entities are available."""
+        device_type = self.device_config.get(CONF_TYPE)
+        entities_to_check = []
+        
+        # 1. Switch entity
+        if device_type == TYPE_SWITCH:
+            switch_entity = self.device_config.get(CONF_SWITCH_ENTITY_ID)
+            if switch_entity:
+                entities_to_check.append(switch_entity)
+        
+        # 2. Numeric target entities
+        elif device_type == TYPE_NUMERIC:
+            numeric_targets = self.device_config.get(CONF_NUMERIC_TARGETS, [])
+            for target in numeric_targets:
+                numeric_entity = target.get(CONF_NUMERIC_ENTITY_ID)
+                if numeric_entity:
+                    entities_to_check.append(numeric_entity)
+        
+        # 3. Power sensor
+        power_sensor = self.device_config.get(CONF_MEASURED_POWER_ENTITY_ID)
+        if power_sensor:
+            entities_to_check.append(power_sensor)
+            
+        # Check all entities
+        for entity_id in entities_to_check:
+            state = self.hass.states.get(entity_id)
+            if state is None or state.state in ["unavailable", "unknown"]:
+                _LOGGER.debug(f"{self.device_name}: Entity {entity_id} is unavailable/unknown")
+                return False
+                
+        return True
+
     def _get_current_power(self) -> float:
         """Get current power consumption."""
         power_sensor = self.device_config.get(CONF_MEASURED_POWER_ENTITY_ID)

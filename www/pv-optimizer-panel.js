@@ -466,10 +466,14 @@ class PvOptimizerPanel extends LitElement {
     const isOn = state.is_on;
     const isLocked = state.is_locked;
 
+    // Check availability flag from backend (default to true if undefined for backward compatibility)
+    const isAvailable = state.is_available !== undefined ? state.is_available : true;
+    const isUnavailable = !isAvailable;
+
     return html`
       <ha-card class="device-card ${isOn ? 'active' : ''}">
         <div class="device-header">
-          <div class="device-title">
+          <div class="device-title" style="${isUnavailable ? 'text-decoration: line-through; opacity: 0.6;' : ''}">
             <ha-icon icon=${isOn ? "mdi:power-plug" : "mdi:power-plug-off"} class="device-icon"></ha-icon>
             ${device.name}
           </div>
