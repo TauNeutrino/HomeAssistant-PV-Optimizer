@@ -373,6 +373,10 @@ class DeviceConfigurationSensor(CoordinatorEntity, SensorEntity):
             "min_off_time": config.get("min_off_time", 0),
             "optimization_enabled": config.get("optimization_enabled", True),
             "simulation_active": config.get("simulation_active", False),
+            # Dynamic state
+            "is_locked": self.coordinator.device_state.get("is_locked", False),
+            "is_locked_timing": self.coordinator.device_state.get("is_locked_timing", False),
+            "is_locked_manual": self.coordinator.device_state.get("is_locked_manual", False),
         }
         
         # Add type-specific attributes

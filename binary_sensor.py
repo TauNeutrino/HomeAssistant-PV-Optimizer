@@ -64,8 +64,7 @@ class DeviceLockedBinarySensor(CoordinatorEntity, BinarySensorEntity):
     
     _attr_has_entity_name = True
     _attr_name = "Locked"
-    _attr_name = "Locked"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
+#    _attr_entity_category = EntityCategory.DIAGNOSTIC
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the sensor."""
@@ -97,8 +96,7 @@ class DeviceTimingLockBinarySensor(CoordinatorEntity, BinarySensorEntity):
     
     _attr_has_entity_name = True
     _attr_name = "Timing Lock"
-    _attr_name = "Timing Lock"  # Explicit name fallback
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
+#    _attr_entity_category = EntityCategory.DIAGNOSTIC
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the sensor."""
@@ -130,8 +128,7 @@ class DeviceManualLockBinarySensor(CoordinatorEntity, BinarySensorEntity):
     
     _attr_has_entity_name = True
     _attr_name = "Manual Lock"
-    _attr_name = "Manual Lock"  # Explicit name fallback
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
+#    _attr_entity_category = EntityCategory.DIAGNOSTIC
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the sensor."""

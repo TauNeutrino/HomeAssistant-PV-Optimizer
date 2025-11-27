@@ -17,6 +17,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.entity import EntityCategory
 
 from .const import (
     DOMAIN,
@@ -110,6 +111,7 @@ class DeviceMinOnTimeNumber(CoordinatorEntity, NumberEntity, RestoreEntity):
     
     _attr_has_entity_name = True
     _attr_name = "Min On Time"
+    _attr_entity_category = EntityCategory.CONFIG
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the number."""
@@ -154,6 +156,7 @@ class DeviceMinOffTimeNumber(CoordinatorEntity, NumberEntity, RestoreEntity):
     
     _attr_has_entity_name = True
     _attr_name = "Min Off Time"
+    _attr_entity_category = EntityCategory.CONFIG
     
     def __init__(self, coordinator: DeviceCoordinator) -> None:
         """Initialize the number."""
