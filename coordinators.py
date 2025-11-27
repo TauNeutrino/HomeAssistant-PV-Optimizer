@@ -29,6 +29,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.history import get_significant_states
 from homeassistant.util import dt as dt_util
@@ -60,6 +61,7 @@ from .const import (
     ATTR_PVO_LAST_TARGET_STATE,
     ATTR_IS_LOCKED,
     ATTR_MEASURED_POWER_AVG,
+    normalize_device_name,
 )
 from .device import create_device, PVDevice
 
@@ -143,7 +145,17 @@ class DeviceCoordinator(DataUpdateCoordinator):
                     self._handle_state_change
                 )
             )
+
             _LOGGER.debug(f"{self.device_name}: Listening to {entity_id} state changes")
+            
+        # Retrieve device ID from registry
+        dev_reg = dr.async_get(self.hass)
+        normalized_name = normalize_device_name(self.device_name)
+        device = dev_reg.async_get_device(identifiers={(DOMAIN, f"{self.config_entry.entry_id}_{normalized_name}")})
+        if device:
+            self.device_id = device.id
+        else:
+            self.device_id = None
     
     async def async_will_remove_from_hass(self) -> None:
         """Clean up listeners when coordinator is removed."""
@@ -209,6 +221,23 @@ class DeviceCoordinator(DataUpdateCoordinator):
         
         # Check availability of underlying entities
         is_available = self._check_availability()
+
+        # Retry fetching device_id if missing (device might have been created after coordinator startup)
+        if getattr(self, "device_id", None) is None:
+            dev_reg = dr.async_get(self.hass)
+            normalized_name = normalize_device_name(self.device_name)
+            identifier = (DOMAIN, f"{self.config_entry.entry_id}_{normalized_name}")
+            
+            device = dev_reg.async_get_device(identifiers={identifier})
+            if device:
+                self.device_id = device.id
+                _LOGGER.debug(f"{self.device_name}: Found device ID: {self.device_id}")
+            else:
+                 _LOGGER.debug(f"{self.device_name}: Device not found in registry yet. Looking for identifier: {identifier}")
+                 # Debug: List all devices for this config entry
+                 devices = [d for d in dev_reg.devices.values() if self.config_entry.entry_id in d.config_entries]
+                 for d in devices:
+                     _LOGGER.debug(f"Available device: {d.name} - Identifiers: {d.identifiers}")
         
         # Behavior Refinement: If optimization is disabled, device is ON (via optimizer), 
         # and locks are clear -> Turn OFF
@@ -237,6 +266,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
             "is_locked_timing": locked_timing,
             "is_locked_manual": locked_manual,
             "is_available": is_available,
+            "device_id": getattr(self, "device_id", None),
             ATTR_PVO_LAST_TARGET_STATE: self.device_state.get(ATTR_PVO_LAST_TARGET_STATE, is_on),
             "last_update": now,
         }

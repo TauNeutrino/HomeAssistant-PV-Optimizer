@@ -452,19 +452,28 @@ class PvOptimizerPanel extends LitElement {
           ${devices.length === 0
         ? html`<div class="empty-state">No active devices</div>`
         : html`
-                <div class="device-list-compact">
-                  ${devices.map((device, index) => html`
-                    <div class="device-row">
-                      <div class="device-main">
-                        <div style="width: 8px; height: 8px; border-radius: 50%; background-color: ${this._getDeviceColor(index)}; margin-right: 8px; display: inline-block;"></div>
-                        <span class="device-name">${device.name}</span>
-                        <span class="device-meta">Prio ${device.priority}</span>
-                      </div>
-                      <div class="device-power">${device.power} W</div>
+            <div class="device-list-compact">
+              ${devices.map((device, index) => {
+          // Use measured power for Real, nominal for Simulation
+          let power;
+          if (sensorKey === 'simulation_ideal_devices') {
+            power = device.power || 0;
+          } else {
+            power = device.measured_power !== undefined ? device.measured_power : (device.power || 0);
+          }
+          return html`
+                  <div class="device-row">
+                    <div class="device-main">
+                      <div style="width: 8px; height: 8px; border-radius: 50%; background-color: ${this._getDeviceColor(index)}; margin-right: 8px; display: inline-block;"></div>
+                      <span class="device-name">${device.name}</span>
+                      <span class="device-meta">Prio ${device.priority}</span>
                     </div>
-                  `)}
-                </div>
-              `}
+                    <div class="device-power">${power.toFixed(0)} W</div>
+                  </div>
+                `;
+        })}
+            </div>
+          `}
         </div>
       </ha-card>
     `;
@@ -536,7 +545,10 @@ class PvOptimizerPanel extends LitElement {
         <div class="device-header">
           <div class="device-title" style="${isUnavailable ? 'text-decoration: line-through; opacity: 0.6;' : ''}">
             <ha-icon icon=${isOn ? "mdi:power-plug" : "mdi:power-plug-off"} class="device-icon"></ha-icon>
-            ${device.name}
+            ${state.device_id
+        ? html`<a href="/config/devices/device/${state.device_id}" target="_blank" style="color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor;">${device.name}</a>`
+        : device.name
+      }
           </div>
           <div class="lock-icons">
             ${state.is_locked_timing ? html`<ha-icon icon="mdi:timer-lock" title="Timing Lock (Min On/Off Time)" class="lock-icon"></ha-icon>` : ''}
@@ -941,6 +953,36 @@ class PvOptimizerPanel extends LitElement {
       .progress-fill {
         height: 100%;
         transition: width 0.5s ease;
+      }
+
+      /* Device List */
+      .device-list-compact {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 0 16px 16px;
+      }
+      .device-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 13px;
+      }
+      .device-main {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1;
+      }
+      .device-name {
+      }
+      .device-meta {
+        color: var(--secondary-text-color);
+        font-size: 11px;
+      }
+      .device-power {
+        margin-left: auto;
+        white-space: nowrap;
       }
 
       /* Utilities */
