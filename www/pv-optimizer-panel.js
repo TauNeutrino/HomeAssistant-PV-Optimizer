@@ -335,8 +335,39 @@ class PvOptimizerPanel extends LitElement {
   }
 
   _renderIdealDevicesCard(title, sensorKey, icon, colorVar) {
-    const devices = this._getIdealDevices(sensorKey);
-    const budget = this._getPowerBudget(sensorKey === 'real_ideal_devices' ? 'real' : 'simulation');
+    let devices = [...this._getIdealDevices(sensorKey)];
+    let budget = this._getPowerBudget(sensorKey === 'real_ideal_devices' ? 'real' : 'simulation');
+
+    // Frontend-only fix: Include timing-locked ON devices in the budget view
+    if (this._config?.devices) {
+      const lockedOnDevices = this._config.devices.filter(d => {
+        const state = d.state || {};
+        const config = d.config || {};
+        const isTimingLocked = state.is_locked_timing;
+        const isOn = state.is_on;
+        const alreadyInList = devices.some(existing => existing.name === config.name);
+        return isOn && isTimingLocked && !alreadyInList;
+      });
+
+      lockedOnDevices.forEach(d => {
+        const config = d.config || {};
+        const state = d.state || {};
+        // Use measured power if available for consistency with other devices
+        const power = state.measured_power !== undefined ? state.measured_power : (config.power || 0);
+
+        budget += power;
+        devices.push({
+          name: config.name,
+          power: config.power || 0,
+          measured_power: state.measured_power,
+          priority: config.priority || 5
+        });
+      });
+
+      // Re-sort to ensure correct order
+      devices.sort((a, b) => (a.priority || 99) - (b.priority || 99));
+    }
+
     const totalPower = devices.reduce((sum, d) => sum + (d.measured_power !== undefined ? d.measured_power : d.power || 0), 0);
     const usagePercent = budget > 0 ? Math.min((totalPower / budget) * 100, 100) : 0;
 
