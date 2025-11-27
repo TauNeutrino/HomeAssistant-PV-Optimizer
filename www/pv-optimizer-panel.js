@@ -701,7 +701,7 @@ class PvOptimizerPanel extends LitElement {
 
       .dashboard-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
         gap: 24px;
         margin-top: 24px;
         align-items: start;
@@ -711,11 +711,12 @@ class PvOptimizerPanel extends LitElement {
         display: flex;
         flex-direction: column;
         gap: 24px;
+        min-width: 400px;
       }
 
       .dual-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
         gap: 16px;
       }
 
@@ -723,6 +724,7 @@ class PvOptimizerPanel extends LitElement {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
         gap: 16px;
+        align-items: start;
       }
 
       /* Header */
@@ -918,6 +920,10 @@ class PvOptimizerPanel extends LitElement {
         display: flex;
         justify-content: space-between;
         font-size: 13px;
+        gap: 8px;
+      }
+      .device-stats .stat {
+        white-space: nowrap;
       }
       .status-badges {
         display: flex;
