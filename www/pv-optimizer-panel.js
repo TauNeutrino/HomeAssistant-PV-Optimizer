@@ -38,10 +38,12 @@ class PvOptimizerPanel extends LitElement {
     this._secondInterval = null;
     this._lastUpdateTimestamp = null;
     this._elapsedSeconds = null;
+    this._translations = null;
   }
 
-  connectedCallback() {
+  async connectedCallback() {
     super.connectedCallback();
+    await this._loadTranslations();
     this._fetchConfig();
 
     // Auto-refresh every 30 seconds
@@ -53,6 +55,36 @@ class PvOptimizerPanel extends LitElement {
     this._secondInterval = setInterval(() => {
       this._updateElapsedTime();
     }, 1000);
+  }
+
+  async _loadTranslations() {
+    try {
+      const language = this.hass.language || 'en';
+      const response = await fetch(`/pv_optimizer_translations/${language}.json`);
+      if (!response.ok) {
+        // Fallback to English
+        const fallback = await fetch(`/pv_optimizer_translations/en.json`);
+        this._translations = (await fallback.json()).panel || {};
+      } else {
+        this._translations = (await response.json()).panel || {};
+      }
+    } catch (err) {
+      console.warn('Failed to load translations, using English fallback');
+      // Hardcoded English fallback
+      this._translations = {};
+    }
+  }
+
+  // Utility method to get translated string
+  t(path, fallback = '') {
+    if (!this._translations) return fallback || path;
+    const keys = path.split('.');
+    let value = this._translations;
+    for (const key of keys) {
+      value = value?.[key];
+      if (value === undefined) return fallback || path;
+    }
+    return value;
   }
 
   async _handleResetDevice(device) {
@@ -254,11 +286,11 @@ class PvOptimizerPanel extends LitElement {
           <div class="actions">
             <ha-button @click=${this._openConfiguration} outlined style="--mdc-theme-primary: var(--app-header-text-color, white); border-color: rgba(255,255,255,0.5);">
               <ha-icon slot="icon" icon="mdi:cog"></ha-icon>
-              Configuration
+              ${this.t('header.configuration', 'Configuration')}
             </ha-button>
             <div class="status-indicator ${ready ? 'ready' : 'error'}" style="background: rgba(255,255,255,0.1); color: inherit;">
               <ha-icon icon=${ready ? "mdi:check-circle" : "mdi:alert-circle"}></ha-icon>
-              ${ready ? "System Ready" : "System Issue"}
+              ${ready ? this.t('header.system_ready', 'System Ready') : this.t('header.system_issue', 'System Issue')}
             </div>
           </div>
         </div>
@@ -282,19 +314,19 @@ class PvOptimizerPanel extends LitElement {
     if (!stats) return html`<div class="loading">Loading statistics...</div>`;
 
     const items = [
-      { label: "Current Surplus", value: `${(stats.current_surplus).toFixed(0)} W`, rawValue: stats.current_surplus, icon: "mdi:flash" },
-      { label: "Avg Surplus", value: `${stats.averaged_surplus.toFixed(0)} W`, rawValue: stats.averaged_surplus, icon: "mdi:chart-bell-curve-cumulative" },
-      { label: "Potential Load", value: `${stats.potential_power_on_devices.toFixed(0)} W`, icon: "mdi:lightning-bolt-outline" },
-      { label: "Active Load", value: `${stats.measured_power_on_devices.toFixed(0)} W`, icon: "mdi:lightning-bolt" },
-      { label: "Last Update", value: this._lastUpdateTimestamp ? this._lastUpdateTimestamp.toLocaleTimeString() : 'N/A', icon: "mdi:clock-outline" },
-      { label: "Age", value: this._elapsedSeconds !== null ? `${this._elapsedSeconds}s` : 'N/A', icon: "mdi:timer-outline" },
+      { label: this.t('system_overview.current_surplus', 'Current Surplus'), value: `${(stats.current_surplus).toFixed(0)} W`, rawValue: stats.current_surplus, icon: "mdi:flash" },
+      { label: this.t('system_overview.avg_surplus', 'Avg Surplus'), value: `${stats.averaged_surplus.toFixed(0)} W`, rawValue: stats.averaged_surplus, icon: "mdi:chart-bell-curve-cumulative" },
+      { label: this.t('system_overview.potential_load', 'Potential Load'), value: `${stats.potential_power_on_devices.toFixed(0)} W`, icon: "mdi:lightning-bolt-outline" },
+      { label: this.t('system_overview.active_load', 'Active Load'), value: `${stats.measured_power_on_devices.toFixed(0)} W`, icon: "mdi:lightning-bolt" },
+      { label: this.t('system_overview.last_update', 'Last Update'), value: this._lastUpdateTimestamp ? this._lastUpdateTimestamp.toLocaleTimeString() : 'N/A', icon: "mdi:clock-outline" },
+      { label: this.t('system_overview.age', 'Age'), value: this._elapsedSeconds !== null ? `${this._elapsedSeconds}s` : 'N/A', icon: "mdi:timer-outline" },
     ];
 
     return html`
       <ha-card class="stats-card">
         <h1 class="card-header">
           <ha-icon icon="mdi:chart-dashboard"></ha-icon>
-          System Overview
+          ${this.t('system_overview.title', 'System Overview')}
         </h1>
         <div class="stats-grid">
           ${items.map(item => {
@@ -412,7 +444,7 @@ class PvOptimizerPanel extends LitElement {
 
           <div class="budget-bar">
             <div class="budget-info">
-              <span>Power Budget</span>
+              <span>${this.t('real_optimization.power_budget', 'Power Budget')}</span>
               <span style="${budget < 0 ? 'color: var(--error-color); font-weight: 600;' : ''}">${budget.toFixed(0)} W</span>
             </div>
             <div class="progress-track" style="display: flex; overflow: hidden;">
@@ -450,7 +482,7 @@ class PvOptimizerPanel extends LitElement {
           </div>
 
           ${devices.length === 0
-        ? html`<div class="empty-state">No active devices</div>`
+        ? html`<div class="empty-state">${this.t('common.no_active_devices', 'No active devices')}</div>`
         : html`
             <div class="device-list-compact">
               ${devices.map((device, index) => {
@@ -466,7 +498,7 @@ class PvOptimizerPanel extends LitElement {
                     <div class="device-main">
                       <div style="width: 8px; height: 8px; border-radius: 50%; background-color: ${this._getDeviceColor(index)}; margin-right: 8px; display: inline-block;"></div>
                       <span class="device-name">${device.name}</span>
-                      <span class="device-meta">Prio ${device.priority}</span>
+                      <span class="device-meta">${this.t('common.prio', 'Prio')} ${device.priority}</span>
                     </div>
                     <div class="device-power">${power.toFixed(0)} W</div>
                   </div>
@@ -488,16 +520,17 @@ class PvOptimizerPanel extends LitElement {
       <ha-card class="comparison-card">
         <h1 class="card-header">
           <ha-icon icon="mdi:compare"></ha-icon>
-          Optimization Comparison
+          ${this.t('comparison.title', 'Comparison')}
         </h1>
         <div class="table-container">
           <table>
             <thead>
               <tr>
-                <th>Device</th>
-                <th class="text-right">Power</th>
-                <th class="text-center">Real</th>
-                <th class="text-center">Sim</th>
+                <th>${this.t('comparison.device', 'Device')}</th>
+                <th>${this.t('comparison.priority', 'Priority')}</th>
+                <th class="text-right">${this.t('comparison.power', 'Power')}</th>
+                <th class="text-center">${this.t('comparison.real', 'Real')}</th>
+                <th class="text-center">${this.t('comparison.simulation', 'Sim')}</th>
               </tr>
             </thead>
             <tbody>
@@ -567,17 +600,17 @@ class PvOptimizerPanel extends LitElement {
         <div class="device-body">
           <div class="chip-container">
             <span class="chip type">${device.type}</span>
-            <span class="chip priority">Prio ${device.priority}</span>
+            <span class="chip priority">${this.t('common.prio', 'Prio')} ${device.priority}</span>
           </div>
           
           <div class="device-stats">
             <div class="stat">
-              <span class="label">Rated</span>
+              <span class="label">${this.t('managed_devices.rated', 'Rated')}</span>
               <span class="value">${device.power} W</span>
             </div>
             ${state.measured_power_avg ? html`
               <div class="stat">
-                <span class="label">Measured</span>
+                <span class="label">${this.t('managed_devices.measured', 'Measured')}</span>
                 <span class="value">${state.measured_power_avg.toFixed(0)} W</span>
               </div>
             ` : ''}
@@ -592,7 +625,7 @@ class PvOptimizerPanel extends LitElement {
               style="cursor: pointer;"
               title="${device.optimization_enabled !== false ? 'Optimization Active: Click to disable and control manually' : 'Manual Control: Click to enable automatic optimization'}"
             >
-              ${device.optimization_enabled !== false ? 'Auto' : 'Manual'}
+              ${device.optimization_enabled !== false ? this.t('managed_devices.auto', 'Auto') : this.t('managed_devices.manual', 'Manual')}
             </span>
             <span 
               class="badge ${device.simulation_active ? 'sim' : 'sim-disabled'}"
@@ -600,7 +633,7 @@ class PvOptimizerPanel extends LitElement {
               style="cursor: pointer; ${!device.simulation_active ? 'background-color: var(--warning-color, #ff9800); color: black;' : ''}"
               title="${device.simulation_active ? 'Simulation Enabled: Device participates in what-if scenarios' : 'Simulation Disabled: Device excluded from simulation calculations'}"
             >
-              Sim
+              ${this.t('managed_devices.sim', 'Sim')}
             </span>
           </div>
         </div>
@@ -707,7 +740,7 @@ class PvOptimizerPanel extends LitElement {
             <div class="view-toggle">
               <ha-button @click=${this._toggleComparison}>
                 <ha-icon slot="icon" icon=${this._showComparison ? "mdi:view-dashboard" : "mdi:table-large"}></ha-icon>
-                ${this._showComparison ? "View Cards" : "View Comparison"}
+                ${this._showComparison ? this.t('comparison.view_cards', 'View Cards') : this.t('comparison.view_comparison', 'View Comparison')}
               </ha-button>
             </div>
 
@@ -715,14 +748,14 @@ class PvOptimizerPanel extends LitElement {
         ? this._renderComparisonTable()
         : html`
                   <div class="dual-grid">
-                    ${this._renderIdealDevicesCard("Real Optimization", "real_ideal_devices", "mdi:lightning-bolt", "--success-color")}
-                    ${this._renderIdealDevicesCard("Simulation", "simulation_ideal_devices", "mdi:flask", "--info-color")}
+                    ${this._renderIdealDevicesCard(this.t('real_optimization.title', 'Real Optimization'), "real_ideal_devices", "mdi:lightning-bolt", "--success-color")}
+                    ${this._renderIdealDevicesCard(this.t('simulation.title', 'Simulation'), "simulation_ideal_devices", "mdi:flask", "--info-color")}
                   </div>
                 `}
           </div>
 
           <div class="devices-column">
-            <h2 class="section-title">Managed Devices</h2>
+            <h2 class="section-title">${this.t('managed_devices.title', 'Managed Devices')}</h2>
             <div class="devices-grid">
               ${this._config?.devices
         ?.map(d => this._renderDeviceCard(d))}

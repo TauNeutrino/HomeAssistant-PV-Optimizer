@@ -252,5 +252,70 @@
         "name": "Manual Lock"
       }
     }
+  },
+  "panel": {
+    "system_overview": {
+      "title": "System Overview",
+      "current_surplus": "Current Surplus",
+      "avg_surplus": "Avg Surplus",
+      "potential_load": "Potential Load",
+      "active_load": "Active Load",
+      "last_update": "Last Update",
+      "age": "Age"
+    },
+    "managed_devices": {
+      "title": "Managed Devices",
+      "rated": "Rated",
+      "measured": "Measured",
+      "auto": "Auto",
+      "manual": "Manual",
+      "sim": "Sim"
+    },
+    "real_optimization": {
+      "title": "Real Optimization",
+      "power_budget": "Power Budget"
+    },
+    "simulation": {
+      "title": "Simulation",
+      "power_budget": "Power Budget",
+      "additional_surplus": "Additional Surplus (W)"
+    },
+    "comparison": {
+      "title": "Comparison",
+      "view_comparison": "View Comparison",
+      "view_cards": "View Cards",
+      "device": "Device",
+      "priority": "Priority",
+      "power": "Power",
+      "real": "Real",
+      "simulation": "Simulation"
+    },
+    "tooltips": {
+      "timing_lock": "Timing Lock: Device cannot be controlled due to Min On/Off time constraints",
+      "manual_lock": "Manual Lock: Device state was manually changed by user",
+      "reset_lock": "Reset Lock: Clear manual lock and allow optimizer to control this device",
+      "optimization_active": "Optimization Active: Click to disable and control manually",
+      "manual_control": "Manual Control: Click to enable automatic optimization",
+      "simulation_enabled": "Simulation Enabled: Device participates in what-if scenarios",
+      "simulation_disabled": "Simulation Disabled: Device excluded from simulation calculations"
+    },
+    "notifications": {
+      "optimization_enabled": "Optimization enabled",
+      "optimization_disabled": "Optimization disabled",
+      "simulation_enabled": "Simulation enabled",
+      "simulation_disabled": "Simulation disabled",
+      "failed_to_update": "Failed to update"
+    },
+    "common": {
+      "no_active_devices": "No active devices",
+      "loading": "Loading...",
+      "unused": "Unused",
+      "prio": "Prio"
+    },
+    "header": {
+      "configuration": "Configuration",
+      "system_ready": "System Ready",
+      "system_issue": "System Issue"
+    }
   }
 }

@@ -252,5 +252,70 @@
         "name": "Manuelle Sperre"
       }
     }
+  },
+  "panel": {
+    "system_overview": {
+      "title": "Systemübersicht",
+      "current_surplus": "Aktueller Überschuss",
+      "avg_surplus": "Ø Überschuss",
+      "potential_load": "Nominalleistung",
+      "active_load": "Aktive Last",
+      "last_update": "Letzte Aktualisierung",
+      "age": "Alter"
+    },
+    "managed_devices": {
+      "title": "Verwaltete Geräte",
+      "rated": "Nennleistung",
+      "measured": "Gemessen",
+      "auto": "Auto",
+      "manual": "Manuell",
+      "sim": "Sim"
+    },
+    "real_optimization": {
+      "title": "Optimierung",
+      "power_budget": "Leistungsbudget"
+    },
+    "simulation": {
+      "title": "Simulation",
+      "power_budget": "Leistungsbudget",
+      "additional_surplus": "Extra Überschuss (W)"
+    },
+    "comparison": {
+      "title": "Vergleich",
+      "view_comparison": "Vergleich anzeigen",
+      "view_cards": "Karten anzeigen",
+      "device": "Gerät",
+      "priority": "Priorität",
+      "power": "Leistung",
+      "real": "Real",
+      "simulation": "Simulation"
+    },
+    "tooltips": {
+      "timing_lock": "Zeitsperre: Gerät kann aufgrund von Min Ein/Aus-Zeit nicht gesteuert werden",
+      "manual_lock": "Manuelle Sperre: Gerätezustand wurde manuell geändert",
+      "reset_lock": "Sperre aufheben: Manuelle Sperre löschen und Optimierer die Steuerung überlassen",
+      "optimization_active": "Optimierung aktiv: Klicken zum Deaktivieren und manueller Steuerung",
+      "manual_control": "Manuelle Steuerung: Klicken zum Aktivieren der automatischen Optimierung",
+      "simulation_enabled": "Simulation aktiviert: Gerät nimmt an Was-Wäre-Wenn-Szenarien teil",
+      "simulation_disabled": "Simulation deaktiviert: Gerät von Simulationsberechnungen ausgeschlossen"
+    },
+    "notifications": {
+      "optimization_enabled": "Optimierung aktiviert",
+      "optimization_disabled": "Optimierung deaktiviert",
+      "simulation_enabled": "Simulation aktiviert",
+      "simulation_disabled": "Simulation deaktiviert",
+      "failed_to_update": "Aktualisierung fehlgeschlagen"
+    },
+    "common": {
+      "no_active_devices": "Keine aktiven Geräte",
+      "loading": "Lädt...",
+      "unused": "Ungenutzt",
+      "prio": "Prio"
+    },
+    "header": {
+      "configuration": "Konfiguration",
+      "system_ready": "System bereit",
+      "system_issue": "System-Problem"
+    }
   }
 }

@@ -92,6 +92,11 @@ async def async_setup_panel(hass: HomeAssistant):
                 # Physical file path on disk
                 hass.config.path("custom_components/pv_optimizer/www/pv-optimizer-panel.js"),
                 False,  # Don't cache - useful during development to see changes immediately
+            ),
+            StaticPathConfig(
+                "/pv_optimizer_translations",  # URL path for translations
+                hass.config.path("custom_components/pv_optimizer/translations"),
+                True,  # Cache translations
             )
         ]
     )
