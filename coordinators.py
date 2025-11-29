@@ -612,7 +612,8 @@ class ServiceCoordinator(DataUpdateCoordinator):
         
         power_rated_total = sum(
             self._get_device_config(name).get(CONF_POWER, 0)
-            for name in device_states.keys()
+            for name, state in device_states.items()
+            if state.get("is_on")
         )
 
         _LOGGER.warning(f"DEBUG TOTALS: Measured={power_measured_total}, Rated={power_rated_total}")
