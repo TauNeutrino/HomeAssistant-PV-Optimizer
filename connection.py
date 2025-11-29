@@ -78,32 +78,22 @@ async def async_setup_connection(hass):
                     "state": device_state,
                 })
 
-            # Calculate optimizer statistics
-            surplus_sensor_entity_id = service_coordinator.global_config.get("surplus_sensor_entity_id")
-            current_surplus_state = hass.states.get(surplus_sensor_entity_id) if surplus_sensor_entity_id else None
-            current_surplus = float(current_surplus_state.state) if current_surplus_state and current_surplus_state.state not in ['unknown', 'unavailable'] else 0.0
+            # Get optimizer statistics directly from coordinator
+            optimizer_stats = service_coordinator.data.get("optimizer_stats", {}) if service_coordinator.data else {}
             
-            # Default inversion (Negative = Surplus -> Positive = Surplus)
-            current_surplus *= -1
-            
-            if service_coordinator.global_config.get("invert_surplus_value", False):
-                current_surplus *= -1
-
-            potential_power = sum(d["config"].get("power", 0) for d in response_data["devices"] if d["state"].get("is_on"))
-            measured_power = sum(d["state"].get("measured_power_avg", 0) for d in response_data["devices"] if d["state"].get("is_on") and d["state"].get("measured_power_avg") is not None)
-            
+            # Add timestamp info
             last_update_timestamp = service_coordinator.data.get("last_update_timestamp") if service_coordinator.data else None
             elapsed_seconds = (datetime.now(last_update_timestamp.tzinfo) - last_update_timestamp).total_seconds() if last_update_timestamp else None
 
+            # Ensure all keys are present for frontend
             response_data["optimizer_stats"] = {
-                "current_surplus": current_surplus,
-                "averaged_surplus": service_coordinator.data.get("surplus_avg", 0.0) if service_coordinator.data else 0.0,
-                "potential_power_on_devices": potential_power,
-                "measured_power_on_devices": measured_power,
+                "surplus_current": optimizer_stats.get("surplus_current", 0.0),
+                "surplus_average": optimizer_stats.get("surplus_average", 0.0),
+                "power_rated_total": optimizer_stats.get("power_rated_total", 0.0),
+                "power_measured_total": optimizer_stats.get("power_measured_total", 0.0),
                 "last_update_timestamp": last_update_timestamp.isoformat() if last_update_timestamp else None,
                 "elapsed_seconds_since_update": elapsed_seconds,
-                "elapsed_seconds_since_update": elapsed_seconds,
-                "simulation_surplus_offset": service_coordinator.simulation_surplus_offset,
+                "surplus_offset": optimizer_stats.get("surplus_offset", 0.0),
             }
             
             # Send successful response to frontend

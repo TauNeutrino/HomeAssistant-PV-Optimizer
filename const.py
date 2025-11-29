@@ -215,4 +215,4 @@ ATTR_IS_LOCKED = "is_locked"
 # Measured Power Average
 # The averaged power consumption over the sliding window
 # This smoothed value is used for budget calculations
-ATTR_MEASURED_POWER_AVG = "measured_power_avg"
+ATTR_POWER_MEASURED_AVERAGE = "power_measured_average"

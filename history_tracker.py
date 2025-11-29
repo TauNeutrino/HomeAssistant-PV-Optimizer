@@ -86,21 +86,27 @@ class HistoryTracker:
             # Build snapshot
             snapshot = {
                 "timestamp": now.isoformat(),
-                "current_surplus": stats.get("current_surplus", 0),
-                "averaged_surplus": stats.get("averaged_surplus", 0),
-                "power_budget": stats.get("power_budget", 0),
-                "measured_power_on_devices": stats.get("measured_power_on_devices", 0),
+                "surplus_current": stats.get("surplus_current", 0),
+                "surplus_average": stats.get("surplus_average", 0),
+                "budget_real": stats.get("budget_real", 0),
+                "power_measured_total": stats.get("power_measured_total", 0),
                 "active_devices": []
             }
             
             # Collect active device data for stacked charts
+            active_count = 0
             for device_name, device_data in devices_state.items():
-                if device_data.get("is_on"):
+                is_on = device_data.get("is_on", False)
+                if is_on:
                     snapshot["active_devices"].append({
                         "name": device_name,
-                        "measured_power": device_data.get("measured_power_avg", device_data.get("power", 0)),
+                        "power_measured": device_data.get("power_measured", device_data.get("power_measured_average", 0)),
                         "priority": device_data.get("priority", 10)
                     })
+                    active_count += 1
+                
+                # Temporary debug logging
+                _LOGGER.debug(f"Snapshot device check: {device_name}, is_on={is_on}, power={device_data.get('power_measured')}")
             
             # Add snapshot to history
             self._snapshots.append(snapshot)
@@ -112,8 +118,8 @@ class HistoryTracker:
             if len(self._snapshots) % 12 == 0:  # Every 12 snapshots = 1 hour
                 await self._async_save()
                 
-            _LOGGER.debug("Snapshot taken: %d active devices, surplus: %.0fW", 
-                         len(snapshot["active_devices"]), snapshot["current_surplus"])
+            _LOGGER.debug("Snapshot taken: %d active devices (found %d), surplus: %.0fW", 
+                         len(snapshot["active_devices"]), active_count, snapshot["surplus_current"])
                          
         except Exception as err:
             _LOGGER.error("Error taking snapshot: %s", err)
@@ -167,8 +173,8 @@ class HistoryTracker:
         total_events = sum(len(s["active_devices"]) for s in recent_snapshots)
         
         # Average surplus utilization
-        total_surplus = sum(s["current_surplus"] for s in recent_snapshots)
-        total_used = sum(s["measured_power_on_devices"] for s in recent_snapshots)
+        total_surplus = sum(s.get("surplus_current", s.get("current_surplus", 0)) for s in recent_snapshots)
+        total_used = sum(s.get("power_measured_total", s.get("measured_power_on_devices", 0)) for s in recent_snapshots)
         utilization_rate = (total_used / total_surplus * 100) if total_surplus > 0 else 0
         
         # Most active device

@@ -60,7 +60,7 @@ from .const import (
     TYPE_NUMERIC,
     ATTR_PVO_LAST_TARGET_STATE,
     ATTR_IS_LOCKED,
-    ATTR_MEASURED_POWER_AVG,
+    ATTR_POWER_MEASURED_AVERAGE,
     normalize_device_name,
 )
 from .device import create_device, PVDevice
@@ -271,8 +271,8 @@ class DeviceCoordinator(DataUpdateCoordinator):
         # Update state cache
         self.device_state = {
             "is_on": is_on,
-            "measured_power_avg": measured_power_avg,
-            "measured_power": self._get_current_power(),
+            ATTR_POWER_MEASURED_AVERAGE: measured_power_avg,
+            "power_measured": self._get_current_power(),
             ATTR_IS_LOCKED: is_locked,
             "is_locked_timing": locked_timing,
             "is_locked_manual": locked_manual,
@@ -579,6 +579,7 @@ class ServiceCoordinator(DataUpdateCoordinator):
         
         # Calculate averaged surplus first (needed for logging and return data)
         surplus_avg = await self._get_averaged_surplus()
+        surplus_current = self._get_current_surplus()
         
         # Run simulation optimization
         sim_devices = [
@@ -602,8 +603,34 @@ class ServiceCoordinator(DataUpdateCoordinator):
             f"  Simulation: Budget={sim_power_budget:.2f}W, Ideal devices={sim_ideal_list}"
         )
         
+        # Calculate totals
+        power_measured_total = sum(
+            state.get("power_measured", 0) 
+            for state in device_states.values() 
+            if state.get("is_on")
+        )
+        
+        power_rated_total = sum(
+            self._get_device_config(name).get(CONF_POWER, 0)
+            for name in device_states.keys()
+        )
+
+        _LOGGER.warning(f"DEBUG TOTALS: Measured={power_measured_total}, Rated={power_rated_total}")
+        _LOGGER.warning(f"DEBUG DEVICE STATES: {device_states}")
+
         # Return data for sensors
         return {
+            "optimizer_stats": {
+                "surplus_current": surplus_current,
+                "surplus_average": surplus_avg,
+                "budget_real": real_power_budget,
+                "budget_simulation": sim_power_budget,
+                "power_measured_total": power_measured_total,
+                "power_rated_total": power_rated_total,
+                "surplus_offset": self.simulation_surplus_offset,
+            },
+            "devices_state": device_states,
+            # Legacy keys for backward compatibility (optional, but good for safety)
             "power_budget": real_power_budget,
             "surplus_avg": surplus_avg,
             "ideal_on_list": real_ideal_list,
@@ -629,7 +656,7 @@ class ServiceCoordinator(DataUpdateCoordinator):
         for device_name, state in devices:
             if state.get("is_on") and not state.get(ATTR_IS_LOCKED, False):
                 config = self._get_device_config(device_name)
-                power = state.get(ATTR_MEASURED_POWER_AVG, config.get(CONF_POWER, 0.0))
+                power = state.get(ATTR_POWER_MEASURED_AVERAGE, config.get(CONF_POWER, 0.0))
                 running_manageable_power += power
         
         budget = surplus_avg + running_manageable_power
@@ -758,6 +785,25 @@ class ServiceCoordinator(DataUpdateCoordinator):
                 coordinator.async_set_updated_data(coordinator.device_state)
             else:
                 _LOGGER.debug(f"Switch verification successful for {device_name}: state is {actual_state}")
+
+    def _get_current_surplus(self) -> float:
+        """Get current instantaneous PV surplus."""
+        surplus_entity = self.global_config.get(CONF_SURPLUS_SENSOR_ENTITY_ID)
+        if not surplus_entity:
+            return 0.0
+        
+        state = self.hass.states.get(surplus_entity)
+        current = float(state.state) if state and state.state not in ['unknown', 'unavailable'] else 0.0
+        
+        # Requirements state Negative = Surplus.
+        # We invert by default so that internal logic sees Positive = Surplus.
+        current = current * -1
+        
+        # Configured inversion (flip it back if user wants)
+        if self.global_config.get(CONF_INVERT_SURPLUS_VALUE, False):
+            current = current * -1
+            
+        return current
 
     async def _get_averaged_surplus(self) -> float:
         """Get averaged PV surplus."""

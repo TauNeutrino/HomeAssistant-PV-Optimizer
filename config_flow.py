@@ -279,10 +279,10 @@ class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 selector.EntitySelectorConfig(domain=["number", "input_number"]),
             ),
             vol.Required(CONF_ACTIVATED_VALUE): selector.NumberSelector(
-                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX),
+                selector.NumberSelectorConfig(step=0.1, mode=selector.NumberSelectorMode.BOX),
             ),
             vol.Required(CONF_DEACTIVATED_VALUE): selector.NumberSelector(
-                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX),
+                selector.NumberSelectorConfig(step=0.1, mode=selector.NumberSelectorMode.BOX),
             ),
         })
         
@@ -632,10 +632,10 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
                 selector.EntitySelectorConfig(domain=["number", "input_number"]),
             ),
             vol.Required(CONF_ACTIVATED_VALUE): selector.NumberSelector(
-                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX),
+                selector.NumberSelectorConfig(step=0.1, mode=selector.NumberSelectorMode.BOX),
             ),
             vol.Required(CONF_DEACTIVATED_VALUE): selector.NumberSelector(
-                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX),
+                selector.NumberSelectorConfig(step=0.1, mode=selector.NumberSelectorMode.BOX),
             ),
         })
         
@@ -690,13 +690,13 @@ class PVOptimizerOptionsFlow(config_entries.OptionsFlow):
                 CONF_ACTIVATED_VALUE,
                 default=target[CONF_ACTIVATED_VALUE]
             ): selector.NumberSelector(
-                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX),
+                selector.NumberSelectorConfig(step=0.1, mode=selector.NumberSelectorMode.BOX),
             ),
             vol.Required(
                 CONF_DEACTIVATED_VALUE,
                 default=target[CONF_DEACTIVATED_VALUE]
             ): selector.NumberSelector(
-                selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX),
+                selector.NumberSelectorConfig(step=0.1, mode=selector.NumberSelectorMode.BOX),
             ),
         })
         

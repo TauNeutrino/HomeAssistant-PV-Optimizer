@@ -20,7 +20,7 @@ from .const import (
     DOMAIN,
     CONF_NAME,
     ATTR_IS_LOCKED,
-    ATTR_MEASURED_POWER_AVG,
+    ATTR_POWER_MEASURED_AVERAGE,
     ATTR_PVO_LAST_TARGET_STATE,
     normalize_device_name,
 )
@@ -284,7 +284,7 @@ class DevicePowerSensor(CoordinatorEntity, SensorEntity):
     def native_value(self) -> float:
         """Return the measured power."""
         if self.coordinator.data:
-            return round(self.coordinator.data.get(ATTR_MEASURED_POWER_AVG, 0), 1)
+            return round(self.coordinator.data.get(ATTR_POWER_MEASURED_AVERAGE, 0), 1)
         return 0
 
 

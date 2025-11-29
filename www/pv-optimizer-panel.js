@@ -92,13 +92,14 @@ class PvOptimizerPanel extends LitElement {
     return value;
   }
 
-  async _handleResetDevice(device) {
-    if (!confirm(`Reset target state for ${device.name}? This will clear the manual lock.`)) return;
+  async _handleResetDevice(e, deviceName) {
+    e.stopPropagation();
+    if (!confirm(`Reset target state for ${deviceName}? This will clear the manual lock.`)) return;
 
     try {
       await this.hass.callWS({
         type: "pv_optimizer/reset_device",
-        device_name: device.name
+        device_name: deviceName
       });
       // Refresh config to update UI
       await this._fetchConfig();
@@ -385,10 +386,10 @@ class PvOptimizerPanel extends LitElement {
     if (!stats) return html`<div class="loading">Loading statistics...</div>`;
 
     const items = [
-      { label: this.t('system_overview.current_surplus', 'Current Surplus'), value: `${(stats.current_surplus).toFixed(0)} W`, rawValue: stats.current_surplus, icon: "mdi:flash" },
-      { label: this.t('system_overview.avg_surplus', 'Avg Surplus'), value: `${stats.averaged_surplus.toFixed(0)} W`, rawValue: stats.averaged_surplus, icon: "mdi:chart-bell-curve-cumulative" },
-      { label: this.t('system_overview.potential_load', 'Potential Load'), value: `${stats.potential_power_on_devices.toFixed(0)} W`, icon: "mdi:lightning-bolt-outline" },
-      { label: this.t('system_overview.active_load', 'Active Load'), value: `${stats.measured_power_on_devices.toFixed(0)} W`, icon: "mdi:lightning-bolt" },
+      { label: this.t('system_overview.current_surplus', 'Current Surplus'), value: `${(stats.surplus_current || 0).toFixed(0)} W`, rawValue: stats.surplus_current, icon: "mdi:flash" },
+      { label: this.t('system_overview.avg_surplus', 'Avg Surplus'), value: `${(stats.surplus_average || 0).toFixed(0)} W`, rawValue: stats.surplus_average, icon: "mdi:chart-bell-curve-cumulative" },
+      { label: this.t('system_overview.potential_load', 'Rated Power'), value: `${(stats.power_rated_total || 0).toFixed(0)} W`, icon: "mdi:lightning-bolt-outline" },
+      { label: this.t('system_overview.active_load', 'Active Load'), value: `${(stats.power_measured_total || 0).toFixed(0)} W`, icon: "mdi:lightning-bolt" },
       { label: this.t('system_overview.last_update', 'Last Update'), value: this._lastUpdateTimestamp ? this._lastUpdateTimestamp.toLocaleTimeString() : 'N/A', icon: "mdi:clock-outline" },
       { label: this.t('system_overview.age', 'Age'), value: this._elapsedSeconds !== null ? `${this._elapsedSeconds}s` : 'N/A', icon: "mdi:timer-outline" },
     ];
@@ -421,8 +422,8 @@ class PvOptimizerPanel extends LitElement {
     const timestamps = snapshots.map(s => new Date(s.timestamp).getTime());
 
     // 1. Surplus & Budget Series
-    const surplusSeries = snapshots.map(s => [new Date(s.timestamp).getTime(), s.averaged_surplus]);
-    const budgetSeries = snapshots.map(s => [new Date(s.timestamp).getTime(), s.power_budget]);
+    const surplusSeries = snapshots.map(s => [new Date(s.timestamp).getTime(), s.surplus_average]);
+    const budgetSeries = snapshots.map(s => [new Date(s.timestamp).getTime(), s.budget_real]);
 
     // 2. Active Devices Stacked Series
     // Get all unique device names
@@ -436,7 +437,7 @@ class PvOptimizerPanel extends LitElement {
         name: name,
         data: snapshots.map(s => {
           const device = s.active_devices.find(d => d.name === name);
-          return [new Date(s.timestamp).getTime(), device ? device.measured_power : 0];
+          return [new Date(s.timestamp).getTime(), device ? device.power_measured : 0];
         })
       };
     });
@@ -540,14 +541,14 @@ class PvOptimizerPanel extends LitElement {
         if (sensorKey === 'simulation_ideal_devices') {
           powerToUse = config.power || 0;
         } else {
-          powerToUse = state.measured_power !== undefined ? state.measured_power : (config.power || 0);
+          powerToUse = state.power_measured !== undefined ? state.power_measured : (config.power || 0);
         }
 
         budget += powerToUse;
         devices.push({
           name: config.name,
           power: config.power || 0,
-          measured_power: state.measured_power,
+          measured_power: state.power_measured,
           priority: config.priority || 5
         });
       });
@@ -578,7 +579,7 @@ class PvOptimizerPanel extends LitElement {
               <ha-textfield
                 label="Additional Surplus (W)"
                 type="number"
-                .value=${this._config.optimizer_stats?.simulation_surplus_offset || 0}
+                .value=${this._config.optimizer_stats?.surplus_offset || 0}
                 @change=${this._handleSimulationOffsetChange}
                 icon="mdi:plus-minus"
                 style="width: 100%;"
