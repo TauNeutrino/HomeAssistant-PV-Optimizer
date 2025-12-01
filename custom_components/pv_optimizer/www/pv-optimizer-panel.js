@@ -28,6 +28,7 @@ class PvOptimizerPanel extends LitElement {
       _currentTab: { type: String, state: true },
       _historyData: { type: Object, state: true },
       _statisticsData: { type: Object, state: true },
+      _apexChartsLoaded: { type: Boolean, state: true },
     };
   }
 
@@ -49,6 +50,7 @@ class PvOptimizerPanel extends LitElement {
   async connectedCallback() {
     super.connectedCallback();
     await this._loadTranslations();
+    this._loadApexCharts();
     this._fetchConfig();
 
     // Auto-refresh every 30 seconds
@@ -78,6 +80,26 @@ class PvOptimizerPanel extends LitElement {
       // Hardcoded English fallback
       this._translations = {};
     }
+  }
+
+  async _loadApexCharts() {
+    if (window.ApexCharts) {
+      this._apexChartsLoaded = true;
+      return;
+    }
+
+    if (document.getElementById('apexcharts-script')) {
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.id = 'apexcharts-script';
+    script.src = 'https://cdn.jsdelivr.net/npm/apexcharts';
+    script.onload = () => {
+      this._apexChartsLoaded = true;
+      this._updateCharts();
+    };
+    document.head.appendChild(script);
   }
 
   // Utility method to get translated string
@@ -185,6 +207,7 @@ class PvOptimizerPanel extends LitElement {
       clearInterval(this._secondInterval);
       this._secondInterval = null;
     }
+    this._destroyCharts();
   }
 
   _updateElapsedTime() {
@@ -517,16 +540,13 @@ class PvOptimizerPanel extends LitElement {
     return this._renderWithErrorBoundary(
       () => {
         if (!this._historyData) {
-
           return html`<div class="loading-state">
             <ha-icon icon="mdi:loading" class="spinning"></ha-icon>
             <p>Loading charts...</p>
           </div>`;
         }
 
-        // Prepare data for ApexCharts
         const snapshots = this._historyData.snapshots || [];
-
 
         if (snapshots.length === 0) {
           return html`<div class="loading-state">
@@ -538,11 +558,15 @@ class PvOptimizerPanel extends LitElement {
 
         return html`
           <div class="charts-container">
-            <!-- Surplus Trend Chart -->
-            <apexcharts-card id="surplus-chart" .hass=${this.hass}></apexcharts-card>
+            <div class="chart-wrapper">
+              <h3 class="chart-title">${this.t('charts.surplus_trend', 'Surplus Trend')}</h3>
+              <div id="surplus-chart" class="chart-div"></div>
+            </div>
 
-            <!-- Active Devices Stacked Area Chart -->
-            <apexcharts-card id="device-chart" .hass=${this.hass}></apexcharts-card>
+            <div class="chart-wrapper">
+              <h3 class="chart-title">${this.t('charts.active_devices_power', 'Active Devices Power')}</h3>
+              <div id="device-chart" class="chart-div"></div>
+            </div>
           </div>
         `;
       },
@@ -553,70 +577,41 @@ class PvOptimizerPanel extends LitElement {
   updated(changedProps) {
     super.updated(changedProps);
 
+    if (changedProps.has('_currentTab')) {
+      const oldTab = changedProps.get('_currentTab');
+      if (oldTab === 'charts' && this._currentTab !== 'charts') {
+        this._destroyCharts();
+      }
+    }
+
     if (this._currentTab === 'charts') {
       // Only update charts if history data changed or we just switched to charts tab
       if (changedProps.has('_historyData') || changedProps.has('_currentTab')) {
-        this._updateCharts();
+        // Small delay to ensure DOM is ready
+        setTimeout(() => this._updateCharts(), 0);
       }
     }
   }
 
   async _updateCharts() {
-    if (!this._historyData?.snapshots?.length) return;
+    if (!this._historyData?.snapshots?.length || !this._apexChartsLoaded) return;
 
-    // Wait for apexcharts-card to be defined
-    await customElements.whenDefined('apexcharts-card');
+    // Ensure elements exist
+    const surplusEl = this.shadowRoot.getElementById('surplus-chart');
+    const deviceEl = this.shadowRoot.getElementById('device-chart');
+
+    if (!surplusEl || !deviceEl) return;
 
     const snapshots = this._historyData.snapshots;
 
-    // Find a valid entity to use as a dummy for the chart
-    // ApexCharts Card requires an existing entity to be configured
-    const findValidEntity = () => {
-      // Try specific PV Optimizer sensors first
-      const preferred = [
-        'sensor.pv_optimizer_power_budget',
-        'sensor.pv_optimizer_surplus_average',
-        'sensor.pv_optimizer_surplus_avg'
-      ];
-
-      for (const id of preferred) {
-        if (this.hass.states[id]) return id;
-      }
-
-      // Try any sensor from this integration
-      const pvoSensor = Object.keys(this.hass.states).find(id =>
-        id.startsWith('sensor.pv_optimizer_') && !id.includes('unavailable')
-      );
-      if (pvoSensor) return pvoSensor;
-
-      // Fallback to common system sensors
-      if (this.hass.states['sun.sun']) return 'sun.sun';
-      if (this.hass.states['sensor.date']) return 'sensor.date';
-      if (this.hass.states['sensor.time']) return 'sensor.time';
-
-      // Last resort - just use the first available sensor
-      return Object.keys(this.hass.states).find(id => id.startsWith('sensor.')) || 'sun.sun';
-    };
-
-    const dummyEntity = findValidEntity();
-    console.log('[PV Optimizer] Selected dummy entity:', dummyEntity);
-    console.log('[PV Optimizer] Entity state:', this.hass.states[dummyEntity]);
-
-    if (!this.hass.states[dummyEntity]) {
-      console.warn('[PV Optimizer] WARNING: Selected entity does not exist in hass.states!');
-      console.log('[PV Optimizer] Available sensors:', Object.keys(this.hass.states).filter(k => k.startsWith('sensor.pv')));
-    }
-
     // Prepare Data
-    const surplusData = snapshots.map(s => [
-      new Date(s.timestamp).getTime(),
-      s.surplus_average || s.averaged_surplus || 0
-    ]);
-
-    const budgetData = snapshots.map(s => [
-      new Date(s.timestamp).getTime(),
-      s.budget_real || s.power_budget || 0
-    ]);
+    const surplusSeries = [{
+      name: 'Avg Surplus',
+      data: snapshots.map(s => [new Date(s.timestamp).getTime(), s.surplus_average || s.averaged_surplus || 0])
+    }, {
+      name: 'Power Budget',
+      data: snapshots.map(s => [new Date(s.timestamp).getTime(), s.budget_real || s.power_budget || 0])
+    }];
 
     // Get unique devices
     const deviceNames = new Set();
@@ -626,58 +621,97 @@ class PvOptimizerPanel extends LitElement {
       }
     });
 
-    // Configure Surplus Chart
-    const surplusChart = this.shadowRoot.getElementById('surplus-chart');
-    if (surplusChart) {
-      surplusChart.setConfig({
-        type: 'custom:apexcharts-card',
-        chart_type: 'line',
-        graph_span: '24h',
-        header: { show: true, title: this.t('charts.surplus_trend', 'Surplus Trend'), show_states: true },
-        series: [
-          {
-            entity: dummyEntity,
-            name: 'Avg Surplus',
-            color: '#2196f3',
-            type: 'line',
-            data_generator: `return ${JSON.stringify(surplusData)};`
-          },
-          {
-            entity: dummyEntity,
-            name: 'Power Budget',
-            color: '#ff9800',
-            type: 'line',
-            data_generator: `return ${JSON.stringify(budgetData)};`
-          }
-        ]
-      });
-    }
-
-    // Configure Device Chart
-    const deviceChart = this.shadowRoot.getElementById('device-chart');
-    if (deviceChart) {
-      const deviceSeries = Array.from(deviceNames).map(name => {
-        const data = snapshots.map(s => {
+    const deviceSeries = Array.from(deviceNames).map(name => {
+      return {
+        name: name,
+        data: snapshots.map(s => {
           const device = s.active_devices?.find(d => d.name === name);
           return [new Date(s.timestamp).getTime(), device ? (device.power_measured || device.power || 0) : 0];
-        });
+        })
+      };
+    });
 
-        return {
-          entity: dummyEntity,
-          name: name,
-          type: 'area',
-          data_generator: `return ${JSON.stringify(data)};`
-        };
-      });
+    // Common options
+    const commonOptions = {
+      chart: {
+        height: 300,
+        toolbar: { show: false },
+        animations: { enabled: false }, // Disable animations for smoother updates
+        background: 'transparent',
+        foreColor: 'var(--primary-text-color)'
+      },
+      theme: { mode: 'dark' }, // Assume dark mode for now, could be dynamic
+      stroke: { curve: 'smooth', width: 2 },
+      xaxis: {
+        type: 'datetime',
+        tooltip: { enabled: false },
+        axisBorder: { show: false },
+        axisTicks: { show: false }
+      },
+      grid: {
+        borderColor: 'rgba(255,255,255,0.1)',
+        strokeDashArray: 3
+      },
+      tooltip: { theme: 'dark' },
+      legend: { position: 'top' }
+    };
 
-      deviceChart.setConfig({
-        type: 'custom:apexcharts-card',
-        chart_type: 'line',
-        stacked: true,
-        graph_span: '24h',
-        header: { show: true, title: this.t('charts.active_devices_power', 'Active Devices Power'), show_states: true },
-        series: deviceSeries
+    // Render Surplus Chart
+    this._renderApexChart('surplus-chart', {
+      ...commonOptions,
+      chart: { ...commonOptions.chart, type: 'line' },
+      colors: ['#2196f3', '#ff9800'],
+      series: surplusSeries
+    });
+
+    // Render Device Chart
+    this._renderApexChart('device-chart', {
+      ...commonOptions,
+      chart: { ...commonOptions.chart, type: 'area', stacked: true },
+      stroke: { curve: 'smooth', width: 1 },
+      fill: { type: 'gradient', gradient: { opacityFrom: 0.6, opacityTo: 0.1 } },
+      dataLabels: { enabled: false },
+      series: deviceSeries
+    });
+  }
+
+  _renderApexChart(elementId, options) {
+    const element = this.shadowRoot.getElementById(elementId);
+    if (!element) return;
+
+    if (!this._charts) this._charts = {};
+
+    // Check if chart instance exists and element is still connected
+    if (this._charts[elementId]) {
+      try {
+        this._charts[elementId].updateOptions(options);
+      } catch (e) {
+        console.warn('Failed to update chart, recreating...', e);
+        this._charts[elementId].destroy();
+        this._createChart(elementId, element, options);
+      }
+    } else {
+      this._createChart(elementId, element, options);
+    }
+  }
+
+  _createChart(id, element, options) {
+    if (window.ApexCharts) {
+      this._charts[id] = new window.ApexCharts(element, options);
+      this._charts[id].render();
+    }
+  }
+
+  _destroyCharts() {
+    if (this._charts) {
+      Object.values(this._charts).forEach(chart => {
+        try {
+          chart.destroy();
+        } catch (e) {
+          console.warn('Error destroying chart:', e);
+        }
       });
+      this._charts = {};
     }
   }
 
@@ -1566,10 +1600,22 @@ class PvOptimizerPanel extends LitElement {
         gap: 24px;
       }
       
-      apexcharts-card {
-        background: transparent !important;
-        box-shadow: none !important;
+      .chart-wrapper {
+        background: rgba(0,0,0,0.1);
+        border-radius: 8px;
+        padding: 16px;
         border: 1px solid var(--divider-color);
+      }
+      
+      .chart-title {
+        margin: 0 0 16px 0;
+        font-size: 16px;
+        font-weight: 500;
+        color: var(--primary-text-color);
+      }
+      
+      .chart-div {
+        min-height: 300px;
       }
 
       @media (max-width: 600px) {

@@ -2,7 +2,7 @@
   "domain": "pv_optimizer",
   "name": "PV Optimizer",
   "config_flow": true,
-  "version": "1.2.8",
+  "version": "1.3.0",
   "documentation": "https://github.com/TauNeutrino/HomeAssistant-PV-Optimizer/",
   "issue_tracker": "https://github.com/TauNeutrino/HomeAssistant-PV-Optimizer//issues",
   "dependencies": [
