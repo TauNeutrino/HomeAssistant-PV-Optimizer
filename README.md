@@ -1,357 +1,90 @@
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
-
-# PV Optimizer - Simulation Feature
-
-## 🧪 Simulation Mode (v1.1.0+)
-
-### Was ist Simulation Mode?
-
-Der Simulation Mode ermöglicht es, die Optimierungslogik für bestimmte Geräte **ohne physische Steuerung** zu testen. Die Integration führt parallel zur echten Optimierung eine Simulation durch und zeigt die Ergebnisse im Frontend an.
-
-### Warum Simulation?
-
-**Hauptgründe:**
-1. **Neue Geräte testen** - Bevor ein echtes Gerät gekauft/installiert wird
-2. **Konfiguration optimieren** - Prioritäten und Parameter ohne Risiko ausprobieren
-3. **Vergleiche anstellen** - Real vs. "Was-wäre-wenn"-Szenarien
-4. **Schulung/Demonstration** - Zeigen wie die Optimierung funktioniert
-
-### Funktionsweise
-
-#### Zwei parallele Optimierungen
-
-```
-┌─────────────────────────────────────────┐
-│         PV Optimizer Coordinator         │
-├─────────────────────────────────────────┤
-│                                          │
-│  1. Real Optimization                    │
-│     - Geräte mit optimization_enabled    │
-│     - Budget: Surplus + Real Running     │
-│     - Knapsack Algorithmus               │
-│     → Physische Gerätesteuerung ✅       │
-│                                          │
-│  2. Simulation                           │
-│     - Geräte mit simulation_active       │
-│     - Budget: Surplus + Sim Running      │
-│     - Knapsack Algorithmus               │
-│     → Nur Anzeige, KEINE Steuerung ❌    │
-│                                          │
-└─────────────────────────────────────────┘
-```
-
-#### Budget-Berechnung
-
-**Real Optimization:**
-```
-Budget = PV-Überschuss + Leistung(laufende Real-Geräte)
-```
-
-**Simulation:**
-```
-Budget = PV-Überschuss + Leistung(laufende Sim-Geräte)
-```
-
-> **Wichtig:** Getrennte Budgets! Simulation und Real beeinflussen sich nicht gegenseitig.
-
-### Schritt-für-Schritt Anleitung
-
-#### 1. Simulation aktivieren für bestehendes Gerät
-
-**Via Config Flow:**
-```
-Einstellungen → Geräte & Dienste → PV Optimizer → Konfigurieren
-→ Geräte verwalten → Geräteliste anzeigen
-→ Gerät auswählen → Bearbeiten
-→ ✓ Simulation aktiviert (ankreuzen)
-→ Speichern
-```
-
-**Via Entity:**
-```
-switch.pvo_[gerätename]_simulation_active einschalten
-```
-
-#### 2. Neues Simulations-Gerät hinzufügen
-
-```
-Einstellungen → Geräte & Dienste → PV Optimizer → Konfigurieren
-→ Geräte verwalten → Schalter-Gerät hinzufügen
-
-Konfiguration:
-- Name: Test Waschmaschine
-- Typ: Switch
-- Priorität: 3
-- Leistung: 800W
-- Switch Entity: switch.dummy_washing_machine (oder beliebig)
-- ☐ Optimierung aktiviert (aus)
-- ✓ Simulation aktiviert (an)
-```
-
-> **Tipp:** Für reine Simulation kann eine Dummy-Switch-Entity verwendet werden!
-
-#### 3. Ergebnisse ansehen
-
-**Panel öffnen:**
-```
-Sidebar → PV Optimizer
-```
-
-**Zwei Ansichten verfügbar:**
-
-**A) Separate Karten (Standard)**
-```
-┌─────────────────────────────────────┐
-│ ⚡ Real Optimization                 │
-│ ───────────────────────────────────  │
-│ Aktive Geräte: 2                     │
-│ Gesamtleistung: 4300W                │
-│ Budget verfügbar: 5000W              │
-│ Budget genutzt: 86%                  │
-│                                      │
-│ ✅ Heizstab Warmwasser (2000W)      │
-│ ✅ Wärmepumpe (2300W)                │
-└─────────────────────────────────────┘
-
-┌─────────────────────────────────────┐
-│ 🧪 Simulation                        │
-│ ───────────────────────────────────  │
-│ Aktive Geräte: 1                     │
-│ Gesamtleistung: 800W                 │
-│ Budget verfügbar: 5000W              │
-│ Budget genutzt: 16%                  │
-│                                      │
-│ ✅ Test Waschmaschine (800W)        │
-└─────────────────────────────────────┘
-```
-
-**B) Vergleichstabelle**
-
-Klicke auf "Show Comparison Table" Button:
-
-```
-┌────────────────────────────────────────────────────┐
-│ Real vs Simulation Comparison                      │
-├────────────────────────────────────────────────────┤
-│ Device              │ Power │ Real │ Simulation    │
-├─────────────────────┼───────┼──────┼──────────────┤
-│ Heizstab Warmwasser │ 2000W │ ✅   │ ❌           │
-│ Wärmepumpe          │ 2300W │ ✅   │ ❌           │
-│ Test Waschmaschine  │ 800W  │ ❌   │ ✅           │
-└────────────────────────────────────────────────────┘
-```
-
-### Anwendungsbeispiele
-
-#### Beispiel 1: Waschmaschine hinzufügen?
-
-**Szenario:** Überlegen ob eine Waschmaschine sinnvoll steuerbar wäre.
-
-**Vorgehen:**
-```
-1. Simulation-Gerät "Test Waschmaschine" erstellen
-   - Priorität: 4 (nach wichtigen Geräten)
-   - Leistung: 800W
-   - simulation_active: ON
-
-2. Über mehrere Tage beobachten:
-   - Wie oft würde Waschmaschine aktiviert?
-   - Passt in verfügbares Budget?
-   - Stört andere Geräte?
-
-3. Entscheidung:
-   ✅ Ja → Echtes Gerät kaufen, optimization_enabled
-   ❌ Nein → Simulation-Gerät löschen
-```
-
-#### Beispiel 2: Prioritäten optimieren
-
-**Szenario:** Ist Priorität 2 oder 3 besser für die Wärmepumpe?
-
-**Vorgehen:**
-```
-1. Echte Wärmepumpe:
-   - Name: Wärmepumpe Real
-   - Priorität: 2
-   - optimization_enabled: ON
-   - simulation_active: OFF
-
-2. Simulations-Wärmepumpe:
-   - Name: Wärmepumpe Test
-   - Priorität: 3
-   - optimization_enabled: OFF
-   - simulation_active: ON
-
-3. Vergleichstabelle anzeigen:
-   → Welche Konfiguration aktiviert häufiger?
-   → Welche nutzt Budget besser?
-
-4. Beste Priorität auf Real übernehmen
-```
-
-#### Beispiel 3: Budget-Analyse
-
-**Szenario:** Wie viele Geräte passen in typischen PV-Überschuss?
-
-**Vorgehen:**
-```
-1. Alle geplanten Geräte als Simulation hinzufügen:
-   - Pool-Pumpe (1500W) - Prio 5
-   - E-Auto Laden (3000W) - Prio 6
-   - Geschirrspüler (1200W) - Prio 4
-
-2. Simulation über 1 Woche laufen lassen
-
-3. Auswertung:
-   - Welche Geräte aktiviert Simulation häufig?
-   - Welche fast nie?
-   - Gibt es Leistungsspitzen wo nichts passt?
-
-4. Realistische Gerätekombination finden
-```
-
-### Entities für Monitoring
-
-#### Pro Gerät (neu)
-
-```
-switch.pvo_[gerät]_simulation_active
-  - Simulation für dieses Gerät aktivieren
-  - Default: False
-  - Icon: mdi:test-tube
-```
-
-#### Global (neu)
-
-```
-sensor.pv_optimizer_simulation_power_budget
-  - Verfügbares Budget für Simulation
-  - Unit: W
-  - Attribute: surplus, running_power
-
-sensor.pv_optimizer_simulation_ideal_devices
-  - Anzahl Geräte in Simulation ideal state
-  - Attribute:
-    - devices: ["Gerät1", "Gerät2"]
-    - device_details: [{name, power, priority}, ...]
-    - total_power: Summe in W
-
-sensor.pv_optimizer_real_ideal_devices
-  - Anzahl Geräte in Real ideal state
-  - Gleiche Attribute wie Simulation
-```
-
-### Automatisierungs-Beispiele
-
-#### Benachrichtigung bei Simulation-Potenzial
-
-```yaml
-automation:
-  - alias: "PV Optimizer: Simulation zeigt Potenzial"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.pv_optimizer_simulation_ideal_devices
-        above: 2
-        for:
-          hours: 1
-    condition:
-      - condition: numeric_state
-        entity_id: sensor.pv_optimizer_real_ideal_devices
-        below: 1
-    action:
-      - service: notify.mobile_app
-        data:
-          message: >
-            Simulation würde {{ states('sensor.pv_optimizer_simulation_ideal_devices') }} 
-            Geräte aktivieren, aber Real nur {{ states('sensor.pv_optimizer_real_ideal_devices') }}.
-            Überprüfe Konfiguration!
-```
-
-#### Automatischer Vergleichs-Report
-
-```yaml
-automation:
-  - alias: "PV Optimizer: Täglicher Simulation Report"
-    trigger:
-      - platform: time
-        at: "20:00:00"
-    action:
-      - service: notify.telegram
-        data:
-          message: >
-            📊 PV Optimizer Report:
-            
-            Real: {{ state_attr('sensor.pv_optimizer_real_ideal_devices', 'total_power') }}W
-            Sim: {{ state_attr('sensor.pv_optimizer_simulation_ideal_devices', 'total_power') }}W
-            
-            Real Geräte: {{ state_attr('sensor.pv_optimizer_real_ideal_devices', 'devices') | join(', ') }}
-            Sim Geräte: {{ state_attr('sensor.pv_optimizer_simulation_ideal_devices', 'devices') | join(', ') }}
-```
-
-### Tipps & Best Practices
-
-#### ✅ Do's
-
-- **Realistische Leistungswerte** verwenden
-- **Mehrere Tage testen** für aussagekräftige Ergebnisse
-- **Vergleichstabelle nutzen** für direkte Analyse
-- **Simulation nach Test deaktivieren** (Performance)
-
-#### ❌ Don'ts
-
-- **Nicht zu viele Sim-Geräte** gleichzeitig (max. 5-10)
-- **Nicht auf Simulation verlassen** - Real-Test ist Gold-Standard
-- **Nicht vergessen auszuschalten** nach Testphase
-- **Lock-States ignorieren** - auch Simulation beachtet Locks
-
-### Troubleshooting
-
-#### Simulation zeigt keine Geräte
-
-**Prüfen:**
-1. `switch.pvo_[gerät]_simulation_active` ist ON?
-2. Budget ausreichend? (`sensor.pv_optimizer_simulation_power_budget`)
-3. Geräte gesperrt? (`sensor.pvo_[gerät]_locked`)
-4. Priorität zu niedrig?
-
-#### Simulation und Real zeigen gleiches
-
-**Wahrscheinlich:**
-- Beide Sets haben gleiche Geräte mit gleichen Prioritäten
-- Budget für beide ausreichend
-- **Lösung:** Unterschiedliche Geräte oder Prioritäten testen
-
-#### Performance-Probleme
-
-**Bei vielen Geräten:**
-- Max. 10-15 Gesamt-Geräte (Real + Sim)
-- Simulation zeitweise deaktivieren
-- Cycle Time erhöhen (90-120s statt 60s)
-
-### Einschränkungen
-
-**Simulation berücksichtigt NICHT:**
-- Tatsächliche Geräteverfügbarkeit
-- Anlaufzeiten von Geräten
-- Externe Faktoren (Wetter, Temperatur)
-- Benutzerverhalten
-
-**Simulation zeigt nur:**
-- Optimierungs-Algorithmus-Ergebnis
-- Budget-Berechnung
-- Prioritäts-Logik
-
-> **Wichtig:** Simulation ist ein Planungstool, kein Ersatz für Real-Tests!
-
-### Weitere Ressourcen
-
-- **Changelog:** [CHANGELOG.md](CHANGELOG.md) - Version 1.1.0
-- **Beispiel-Konfigurationen:** [examples/simulation/](examples/simulation/)
-- **Diskussionen:** GitHub Discussions
-- **Feedback:** GitHub Issues mit Label "simulation"
-
----
-
-**Version:** 1.1.0+
-**Status:** ✅ Production Ready
-**Backward Compatibility:** ✅ Vollständig kompatibel
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
+[![version](https://img.shields.io/github/v/release/TauNeutrino/HomeAssistant-PV-Optimizer?style=flat-square)](https://github.com/TauNeutrino/HomeAssistant-PV-Optimizer/releases)
+[![beta](https://img.shields.io/badge/status-beta-blue)](https://github.com/TauNeutrino/HomeAssistant-PV-Optimizer)
+
+
+# ☀️ PV Optimizer
+
+**Maximize your solar self-consumption with intelligent device scheduling.**
+
+PV Optimizer is a custom integration for Home Assistant that automatically manages your appliances based on available solar surplus. Unlike simple "threshold" automations, it uses the **Knapsack Algorithm** to find the optimal combination of devices to run, respecting priorities, power limits, and minimum runtime constraints.
+
+## ✨ Features
+
+*   **🧠 Intelligent Optimization**: Uses the Knapsack algorithm to fit the most important devices into your available solar budget.
+*   **🧪 Simulation Mode**: Test your priorities and settings safely! Run a parallel "what-if" simulation to see how the optimizer *would* behave without actually switching any devices.
+*   **📊 Custom Dashboard**: Includes a beautiful, built-in dashboard to visualize power usage, surplus, and device states over time.
+*   **⚡ Dynamic Power Budget**: Automatically adjusts the power budget based on current surplus + power of currently running devices.
+*   **⏱️ Smart Constraints**: Respects "Minimum On Time" and "Minimum Off Time" to protect your appliances (e.g., heat pumps, washing machines).
+*   **🔌 Universal Compatibility**: Works with any `switch` entity or `input_number` in Home Assistant.
+
+## 📥 Installation
+
+### Option 1: HACS (Recommended)
+
+1.  Open HACS in Home Assistant.
+2.  Go to **Integrations** > **Explore & Download Repositories**.
+3.  Search for **"PV Optimizer"**.
+4.  Click **Download**.
+5.  Restart Home Assistant.
+
+### Option 2: Manual Installation
+
+1.  Download the `pv_optimizer` folder from the latest release.
+2.  Copy the folder to your `custom_components/` directory in Home Assistant.
+3.  Restart Home Assistant.
+
+## ⚙️ Configuration
+
+PV Optimizer is fully configurable via the UI.
+
+1.  Go to **Settings** > **Devices & Services**.
+2.  Click **Add Integration** and search for **PV Optimizer**.
+3.  Follow the configuration wizard.
+
+### 1. Main Service Configuration
+*   **Grid Import/Export Sensor**: The sensor measuring grid import (positive value = import, negative value = export).
+*   **Update Interval**: How often to recalculate (default: 60s).
+*   **Average Window**: How many minutes to average all power sensors (default: 5).
+
+### 2. Adding Devices
+Once the integration is added, click **Configure** on the integration entry to manage devices.
+
+Select the type of device you want to add:
+
+*   **Switch**: A switch entity to control (e.g., `switch.heater`).
+*   **Input Number**: An input number entity to control (e.g., `input_number.heater`).
+
+Fill in the following fields:
+*   **Device Name**: Friendly name for the device.
+*   **Power Consumption**: Rated power of the device in Watts.
+*   **Priority**: Higher number = higher priority (1-100).
+*   **Min On/Off Time**: Prevent rapid switching.
+*   **Simulation Active**: Check this to run in Simulation Mode only (no physical switching).
+
+## 🖥️ Dashboard
+
+The integration comes with a custom panel accessible from the sidebar.
+
+*   **System Overview**: Live view of surplus, budget, and active devices.
+*   **Diagrams**: Historical charts showing surplus trends and device activation.
+*   **Statistics**: Efficiency metrics and event counters.
+
+## 🧪 Simulation Mode Explained
+
+Simulation mode allows you to "shadow test" devices.
+*   **Real Optimization**: Controls devices with `Optimization Enabled`.
+*   **Simulation**: Runs a parallel calculation for devices with `Simulation Active`.
+
+Use this to:
+*   Test if a new device *would* fit into your solar curve.
+*   Fine-tune priorities without disrupting your actual home automation.
+*   Compare "Real" vs "Simulation" in the Dashboard to verify your settings.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
