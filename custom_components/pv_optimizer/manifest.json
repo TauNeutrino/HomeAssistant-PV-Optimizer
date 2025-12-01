@@ -16,5 +16,6 @@
     "@TauNeutrino"
   ],
   "iot_class": "local_polling",
-  "integration_type": "device"
+  "integration_type": "device",
+  "icon": "mdi:solar-power"
 }
