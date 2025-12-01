@@ -205,6 +205,8 @@ class DeviceCoordinator(DataUpdateCoordinator):
         
         # Get current state
         is_on = self.device_instance.is_on()
+        is_off = self.device_instance.is_off()
+        is_indeterminate = not is_on and not is_off
         
         # Track state changes
         previous_state = self.device_state.get("is_on")
@@ -224,7 +226,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
         measured_power_avg = await self._get_averaged_power(now, global_config)
         
         # Determine lock status
-        locked_timing, locked_manual = self._get_lock_status(is_on)
+        locked_timing, locked_manual = self._get_lock_status(is_on, is_indeterminate)
         is_locked = locked_timing or locked_manual
         
         # Check availability of underlying entities
@@ -272,7 +274,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
                  self.device_state[ATTR_PVO_LAST_TARGET_STATE] = False
                  self.last_switch_time = now
                  # Recalculate lock status with new state (though likely irrelevant as it's off)
-                 locked_timing, locked_manual = self._get_lock_status(is_on)
+                 locked_timing, locked_manual = self._get_lock_status(is_on, is_indeterminate)
                  is_locked = locked_timing or locked_manual
 
         # Update state cache
@@ -357,7 +359,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
         state = self.hass.states.get(power_sensor)
         return float(state.state) if state and state.state not in ['unknown', 'unavailable'] else 0.0
 
-    def _get_lock_status(self, current_state: bool) -> tuple[bool, bool]:
+    def _get_lock_status(self, current_state: bool, is_indeterminate: bool = False) -> tuple[bool, bool]:
         """
         Determine if device is locked.
         Returns (locked_timing, locked_manual).
@@ -387,7 +389,13 @@ class DeviceCoordinator(DataUpdateCoordinator):
         
         # Only lock if we have a known last target state that differs from current
         # If last_target is None (after reset or initial state), don't lock - allow optimizer to take control
-        if last_target is not None and current_state != last_target:
+        # Only lock if we have a known last target state that differs from current
+        # If last_target is None (after reset or initial state), don't lock - allow optimizer to take control
+        if is_indeterminate:
+            locked_manual = True
+            details = self.device_instance.get_state_details() if self.device_instance else ""
+            _LOGGER.debug(f"{self.device_name}: Manual lock detected - Indeterminate state (custom value set). Details: {details}")
+        elif last_target is not None and current_state != last_target:
             locked_manual = True
             _LOGGER.debug(f"{self.device_name}: Manual lock detected - current:{current_state}, target:{last_target}")
         elif last_target is None:
@@ -406,7 +414,9 @@ class DeviceCoordinator(DataUpdateCoordinator):
             if last_target is True and not is_locked_manual:
                 # Check timing lock
                 is_on = self.device_instance.is_on() if self.device_instance else False
-                locked_timing, _ = self._get_lock_status(is_on)
+                is_off = self.device_instance.is_off() if self.device_instance else True
+                is_indeterminate = not is_on and not is_off
+                locked_timing, _ = self._get_lock_status(is_on, is_indeterminate)
                 
                 if not locked_timing:
                     _LOGGER.info(f"{self.device_name}: Optimization disabled. Turning OFF device immediately.")

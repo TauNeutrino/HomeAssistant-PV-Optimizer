@@ -143,9 +143,18 @@ class PVDevice(ABC):
         pass
 
     @abstractmethod
+    def is_off(self) -> bool:
+        """Return True if the device is currently off/inactive."""
+        pass
+
+    @abstractmethod
     def get_power_consumption(self) -> float:
         """Return the current power consumption of the device."""
         pass
+
+    def get_state_details(self) -> str:
+        """Return details about the current state (useful for debugging indeterminate states)."""
+        return ""
 
 
 class SwitchDevice(PVDevice):
@@ -204,6 +213,10 @@ class SwitchDevice(PVDevice):
         on_state = state.state == "on"
         return not on_state if self.invert else on_state
 
+    def is_off(self) -> bool:
+        """Return True if the switch is off."""
+        return not self.is_on()
+
     def get_power_consumption(self) -> float:
         """Return power consumption - for switches, this is typically from a separate sensor."""
         # This solves the problem of getting power data for switch-controlled devices
@@ -245,37 +258,43 @@ class NumericDevice(PVDevice):
             _LOGGER.debug(f"Deactivated numeric device {self.name}: set {entity_id} to {value}")
 
     def is_on(self) -> bool:
-        """Return True if any of the numeric targets is at activated value or power threshold exceeded."""
-        # This solves the problem of determining if a numeric device is 'on' based on target values
-        # or measured power when available
-        
-        # First check if we have a power sensor and should use power threshold
-        power_sensor = self.config.get(CONF_MEASURED_POWER_ENTITY_ID)
-        power_threshold = self.config.get(CONF_POWER_THRESHOLD, 100)
-        
-        if power_sensor:
-            power_state = self.hass.states.get(power_sensor)
-            if power_state and power_state.state not in ['unknown', 'unavailable']:
-                try:
-                    current_power = float(power_state.state)
-                    is_on_by_power = current_power > power_threshold
-                    _LOGGER.debug(f"Device {self.name} power-based state: {current_power}W > {power_threshold}W = {is_on_by_power}")
-                    return is_on_by_power
-                except (ValueError, TypeError):
-                    _LOGGER.warning(f"Could not parse power value for {self.name}: {power_state.state}")
-        
-        # Fallback to checking numeric targets
+        """Return True ONLY if ALL numeric targets match the activated value."""
+        # Strict check: All targets must match activated_value
         for target in self.numeric_targets:
             entity_id = target[CONF_NUMERIC_ENTITY_ID]
             state = self.hass.states.get(entity_id)
-            if state and state.state not in ['unknown', 'unavailable']:
-                try:
-                    current_value = float(state.state)
-                    if current_value == target[CONF_ACTIVATED_VALUE]:
-                        return True
-                except (ValueError, TypeError):
-                    continue
-        return False
+            
+            if not state or state.state in ['unknown', 'unavailable']:
+                return False
+                
+            try:
+                current_value = float(state.state)
+                # Use a small epsilon for float comparison if needed, but exact match is usually fine for setpoints
+                if current_value != target[CONF_ACTIVATED_VALUE]:
+                    return False
+            except (ValueError, TypeError):
+                return False
+                
+        return True
+
+    def is_off(self) -> bool:
+        """Return True ONLY if ALL numeric targets match the deactivated value."""
+        # Strict check: All targets must match deactivated_value
+        for target in self.numeric_targets:
+            entity_id = target[CONF_NUMERIC_ENTITY_ID]
+            state = self.hass.states.get(entity_id)
+            
+            if not state or state.state in ['unknown', 'unavailable']:
+                return False
+                
+            try:
+                current_value = float(state.state)
+                if current_value != target[CONF_DEACTIVATED_VALUE]:
+                    return False
+            except (ValueError, TypeError):
+                return False
+                
+        return True
 
     def get_power_consumption(self) -> float:
         """Return power consumption - for numeric devices, this is typically from a separate sensor."""
@@ -283,6 +302,18 @@ class NumericDevice(PVDevice):
         # Implementation would read from measured_power_entity_id if configured
         # For now, return nominal power or 0 if no sensor
         return self.config.get("power", 0.0)
+
+    def get_state_details(self) -> str:
+        """Return details about current numeric values."""
+        details = []
+        for target in self.numeric_targets:
+            entity_id = target[CONF_NUMERIC_ENTITY_ID]
+            state = self.hass.states.get(entity_id)
+            current = state.state if state else "Unknown"
+            active = target[CONF_ACTIVATED_VALUE]
+            inactive = target[CONF_DEACTIVATED_VALUE]
+            details.append(f"{entity_id}={current} (Active={active}, Inactive={inactive})")
+        return ", ".join(details)
 
 
 def create_device(hass: HomeAssistant, device_config: Dict[str, Any]) -> Optional[PVDevice]:
