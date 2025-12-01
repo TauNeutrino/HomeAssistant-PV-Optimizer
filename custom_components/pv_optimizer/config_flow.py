@@ -45,8 +45,10 @@ from .const import (
     CONF_MEASURED_POWER_ENTITY_ID,
     CONF_POWER_THRESHOLD,
     CONF_INVERT_SWITCH,
+    CONF_DEVICE_COLOR,
     TYPE_SWITCH,
     TYPE_NUMERIC,
+    DEVICE_COLORS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,6 +60,12 @@ def _get_service_entry(hass):
         if entry.data.get("entry_type") == "service":
             return entry
     return None
+
+
+def _get_random_device_color() -> str:
+    """Get a random color from the predefined palette."""
+    import random
+    return random.choice(DEVICE_COLORS)
 
 
 class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -154,6 +162,7 @@ class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             device_config = {
                 CONF_TYPE: device_type,
+                CONF_DEVICE_COLOR: _get_random_device_color(),  # Assign random color
                 **user_input,
             }
             
@@ -256,9 +265,12 @@ class PVOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Show the form again to add another target
                 return await self.async_step_numeric_targets()
             else:
-                # Finish - create device entry
-                device_config = self._device_base_config
-                device_config[CONF_NUMERIC_TARGETS] = self._numeric_targets
+                # All targets collected, create device entry
+                device_config = {
+                    **self._device_base_config,
+                    CONF_DEVICE_COLOR: _get_random_device_color(),  # Assign random color
+                    CONF_NUMERIC_TARGETS: self._numeric_targets,
+                }
                 
                 # Clean up instance variables
                 self._numeric_targets = []

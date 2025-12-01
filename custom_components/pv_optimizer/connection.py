@@ -270,4 +270,48 @@ async def async_setup_connection(hass):
     websocket_api.async_register_command(hass, handle_get_history)
     websocket_api.async_register_command(hass, handle_get_statistics)
     
+    # Handler for updating device color
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): "pv_optimizer/update_device_color",
+            vol.Required("device_name"): str,
+            vol.Required("color"): str,
+        }
+    )
+    @websocket_api.async_response
+    async def handle_update_device_color(
+        hass: HomeAssistant,
+        connection: websocket_api.ActiveConnection,
+        msg: dict,
+    ) -> None:
+        """Update device color."""
+        try:
+            service_entry = _get_service_entry(hass)
+            if not service_entry:
+                raise ValueError("Service entry not found")
+                
+            service_coordinator = hass.data[DOMAIN].get(service_entry.entry_id)
+            if not service_coordinator:
+                raise ValueError("Service coordinator not found")
+                
+            device_name = msg["device_name"]
+            device_coordinator = service_coordinator.device_coordinators.get(device_name)
+            
+            if not device_coordinator:
+                raise ValueError(f"Device coordinator not found: {device_name}")
+            
+            # Import CONF_DEVICE_COLOR
+            from .const import CONF_DEVICE_COLOR
+            
+            # Update device config with new color
+            await device_coordinator.async_update_device_config({CONF_DEVICE_COLOR: msg["color"]})
+            
+            connection.send_result(msg["id"], {"success": True})
+            
+        except Exception as e:
+            _LOGGER.error(f"Error updating device color: {e}")
+            connection.send_error(msg["id"], "update_failed", str(e))
+    
+    websocket_api.async_register_command(hass, handle_update_device_color)
+    
     _LOGGER.info("WebSocket API handlers registered for PV Optimizer")

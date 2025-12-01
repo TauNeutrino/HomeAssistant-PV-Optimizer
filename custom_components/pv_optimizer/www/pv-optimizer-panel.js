@@ -621,6 +621,14 @@ class PvOptimizerPanel extends LitElement {
       }
     });
 
+    // Build device color map
+    const deviceColorMap = {};
+    if (this._config?.devices) {
+      this._config.devices.forEach(d => {
+        deviceColorMap[d.config.name] = d.config.device_color || '#4CAF50';
+      });
+    }
+
     const deviceSeries = Array.from(deviceNames).map(name => {
       return {
         name: name,
@@ -635,13 +643,25 @@ class PvOptimizerPanel extends LitElement {
     const commonOptions = {
       chart: {
         height: 300,
-        toolbar: { show: false },
-        animations: { enabled: false }, // Disable animations for smoother updates
+        toolbar: {
+          show: true,
+          tools: {
+            download: false,
+            selection: true,
+            zoom: true,
+            zoomin: true,
+            zoomout: true,
+            pan: true,
+            reset: true
+          }
+        },
+        animations: { enabled: false },
         background: 'transparent',
-        foreColor: 'var(--primary-text-color)'
+        foreColor: 'var(--primary-text-color)',
+        group: 'pv-optimizer-charts' // Sync zoom/pan across charts
       },
       theme: { mode: 'dark' }, // Assume dark mode for now, could be dynamic
-      stroke: { curve: 'smooth', width: 2 },
+      stroke: { curve: 'stepline', width: 2 },
       xaxis: {
         type: 'datetime',
         tooltip: { enabled: false },
@@ -652,23 +672,36 @@ class PvOptimizerPanel extends LitElement {
         borderColor: 'rgba(255,255,255,0.1)',
         strokeDashArray: 3
       },
-      tooltip: { theme: 'dark' },
+      tooltip: {
+        theme: 'dark',
+        x: {
+          format: 'dd.MM.yyyy HH:mm'
+        }
+      },
       legend: { position: 'top' }
     };
 
     // Render Surplus Chart
     this._renderApexChart('surplus-chart', {
       ...commonOptions,
-      chart: { ...commonOptions.chart, type: 'line' },
+      chart: { ...commonOptions.chart, type: 'line', id: 'surplus-chart' },
       colors: ['#2196f3', '#ff9800'],
+      yaxis: {
+        min: 0,
+        labels: {
+          formatter: (value) => Math.round(value) + 'W'
+        }
+      },
       series: surplusSeries
     });
 
     // Render Device Chart
+    const deviceColors = Array.from(deviceNames).map(name => deviceColorMap[name] || '#4CAF50');
     this._renderApexChart('device-chart', {
       ...commonOptions,
-      chart: { ...commonOptions.chart, type: 'area', stacked: true },
-      stroke: { curve: 'smooth', width: 1 },
+      chart: { ...commonOptions.chart, type: 'area', stacked: true, id: 'device-chart' },
+      colors: deviceColors,
+      stroke: { curve: 'stepline', width: 1 },
       fill: { type: 'gradient', gradient: { opacityFrom: 0.6, opacityTo: 0.1 } },
       dataLabels: { enabled: false },
       series: deviceSeries
@@ -681,10 +714,13 @@ class PvOptimizerPanel extends LitElement {
 
     if (!this._charts) this._charts = {};
 
-    // Check if chart instance exists and element is still connected
+    // Check if chart instance exists
     if (this._charts[elementId]) {
       try {
-        this._charts[elementId].updateOptions(options);
+        // Only update series data to preserve zoom state
+        if (options.series) {
+          this._charts[elementId].updateSeries(options.series, false);
+        }
       } catch (e) {
         console.warn('Failed to update chart, recreating...', e);
         this._charts[elementId].destroy();
@@ -712,6 +748,21 @@ class PvOptimizerPanel extends LitElement {
         }
       });
       this._charts = {};
+    }
+  }
+
+  async _handleColorChange(e, deviceName) {
+    const newColor = e.target.value;
+    try {
+      await this.hass.callWS({
+        type: "pv_optimizer/update_device_color",
+        device_name: deviceName,
+        color: newColor
+      });
+      // Refresh config to update UI
+      await this._fetchConfig();
+    } catch (err) {
+      console.error('Failed to update device color:', err);
     }
   }
 
@@ -856,10 +907,12 @@ class PvOptimizerPanel extends LitElement {
       if (sensorKey === 'simulation_ideal_devices') {
         power = device.power || 0;
       } else {
-        power = device.measured_power !== undefined ? device.measured_power : (device.power || 0);
+        power = device.measured_power !== undefined ? device.measured_average : (device.power || 0);
       }
       const width = Math.min((power / budget) * 100, 100);
-      const color = this._getDeviceColor(index);
+      // Get device color from config
+      const deviceData = this._config?.devices?.find(d => d.config.name === device.name);
+      const color = deviceData?.config?.device_color || this._getDeviceColor(index);
       return html`<div class="progress-fill" style="width: ${width}%; background-color: ${color}; border-right: 1px solid rgba(255,255,255,0.2);" title="${device.name}: ${power}W"></div>`;
     })}
                 ${(() => {
@@ -987,13 +1040,22 @@ class PvOptimizerPanel extends LitElement {
     return html`
       <ha-card class="device-card ${isOn ? 'active' : ''}">
         <div class="device-header">
-          <div class="device-title" style="${isUnavailable ? 'text-decoration: line-through; opacity: 0.6;' : ''}">
+        <div class="device-title" style="${isUnavailable ? 'text-decoration: line-through; opacity: 0.6;' : ''}">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <input 
+              type="color" 
+              value="${device.device_color || '#4CAF50'}" 
+              @input=${(e) => this._handleColorChange(e, device.name)}
+              style="width: 24px; height: 24px; border: 2px solid var(--divider-color); border-radius: 50%; cursor: pointer; padding: 0;"
+              title="Click to change device color"
+            />
             <ha-icon icon=${isOn ? "mdi:power-plug" : "mdi:power-plug-off"} class="device-icon"></ha-icon>
             ${state.device_id
         ? html`<a href="/config/devices/device/${state.device_id}" target="_blank" style="color: inherit; text-decoration: none;">${device.name}</a>`
         : device.name
       }
           </div>
+        </div>
           <div class="lock-icons">
             ${state.is_locked_timing ? html`<ha-icon icon="mdi:timer-lock" title="Timing Lock: Device cannot be controlled due to Min On/Off time constraints" class="lock-icon"></ha-icon>` : ''}
             ${state.is_locked_manual ? html`<ha-icon icon="mdi:account-lock" title="Manual Lock: Device state was manually changed by user" class="lock-icon"></ha-icon>` : ''}

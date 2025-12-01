@@ -57,12 +57,14 @@ from .const import (
     CONF_MEASURED_POWER_ENTITY_ID,
     CONF_POWER_THRESHOLD,
     CONF_INVERT_SWITCH,
+    CONF_DEVICE_COLOR,
     TYPE_SWITCH,
     TYPE_NUMERIC,
     ATTR_PVO_LAST_TARGET_STATE,
     ATTR_IS_LOCKED,
     ATTR_POWER_MEASURED_AVERAGE,
     normalize_device_name,
+    DEVICE_COLORS,
 )
 from .device import create_device, PVDevice
 
@@ -96,6 +98,15 @@ class DeviceCoordinator(DataUpdateCoordinator):
         self.device_config = device_config
         self.device_name = device_name
         self.device_id = None  # Will be populated on first update
+        
+        # Backwards compatibility: Assign random color if not present
+        if CONF_DEVICE_COLOR not in self.device_config:
+            import random
+            self.device_config[CONF_DEVICE_COLOR] = random.choice(DEVICE_COLORS)
+            # Update config entry with the new color
+            new_data = dict(config_entry.data)
+            new_data["device_config"] = self.device_config
+            hass.config_entries.async_update_entry(config_entry, data=new_data)
         
         # Device instance for state reading/control
         self.device_instance: Optional[PVDevice] = None
