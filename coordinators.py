@@ -30,6 +30,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.storage import Store
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.history import get_significant_states
 from homeassistant.util import dt as dt_util
@@ -112,6 +113,9 @@ class DeviceCoordinator(DataUpdateCoordinator):
         # State change listeners
         self._unsub_listeners: List = []
         
+        # Persistence
+        self._store = Store(hass, 1, f"pv_optimizer_device_{config_entry.entry_id}_{normalize_device_name(device_name)}")
+        
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass, set up state listeners."""
         await super().async_added_to_hass()
@@ -148,6 +152,9 @@ class DeviceCoordinator(DataUpdateCoordinator):
             )
 
             _LOGGER.debug(f"{self.device_name}: Listening to {entity_id} state changes")
+            
+        # Restore state
+        await self._async_load_state()
             
         # Retrieve device ID from registry
         dev_reg = dr.async_get(self.hass)
@@ -406,7 +413,9 @@ class DeviceCoordinator(DataUpdateCoordinator):
                     if self.device_instance:
                         await self.device_instance.deactivate()
                         self.device_state[ATTR_PVO_LAST_TARGET_STATE] = False
+                        self.device_state[ATTR_PVO_LAST_TARGET_STATE] = False
                         self.last_switch_time = dt_util.now()
+                        await self._async_save_state()
                 else:
                     _LOGGER.info(f"{self.device_name}: Optimization disabled, but timing lock active. Will turn off when lock expires.")
 
@@ -447,6 +456,8 @@ class DeviceCoordinator(DataUpdateCoordinator):
     async def reset_target_state(self) -> None:
         """Reset the last target state to None."""
         self.device_state[ATTR_PVO_LAST_TARGET_STATE] = None
+        self.device_state[ATTR_PVO_LAST_TARGET_STATE] = None
+        await self._async_save_state()
         _LOGGER.info(f"Reset target state for device: {self.device_name}")
         
         # Refresh this device coordinator first to recalculate lock status
@@ -456,6 +467,29 @@ class DeviceCoordinator(DataUpdateCoordinator):
         if self.service_coordinator:
             _LOGGER.info(f"Triggering optimization after reset for device: {self.device_name}")
             await self.service_coordinator.async_request_refresh()
+
+    async def _async_load_state(self) -> None:
+        """Load persisted state."""
+        try:
+            data = await self._store.async_load()
+            if data:
+                self.device_state[ATTR_PVO_LAST_TARGET_STATE] = data.get("last_target_state")
+                if data.get("last_switch_time"):
+                    self.last_switch_time = dt_util.parse_datetime(data["last_switch_time"])
+                _LOGGER.info(f"Restored state for {self.device_name}: target={self.device_state.get(ATTR_PVO_LAST_TARGET_STATE)}, last_switch={self.last_switch_time}")
+        except Exception as e:
+            _LOGGER.error(f"Failed to load state for {self.device_name}: {e}")
+
+    async def _async_save_state(self) -> None:
+        """Save state to persistence."""
+        try:
+            data = {
+                "last_target_state": self.device_state.get(ATTR_PVO_LAST_TARGET_STATE),
+                "last_switch_time": self.last_switch_time.isoformat() if self.last_switch_time else None
+            }
+            await self._store.async_save(data)
+        except Exception as e:
+            _LOGGER.error(f"Failed to save state for {self.device_name}: {e}")
 
 
 class ServiceCoordinator(DataUpdateCoordinator):

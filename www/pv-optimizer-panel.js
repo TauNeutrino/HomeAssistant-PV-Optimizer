@@ -92,6 +92,57 @@ class PvOptimizerPanel extends LitElement {
     return value;
   }
 
+  /**
+   * Error boundary wrapper for render methods
+   * @param {Function} renderFn - Function to execute with error handling
+   * @param {string} componentName - Name of component for error logging
+   * @param {*} fallback - Fallback content to render on error
+   * @returns {TemplateResult} Rendered content or fallback
+   */
+  _renderWithErrorBoundary(renderFn, componentName = 'Component', fallback = null) {
+    try {
+      return renderFn();
+    } catch (error) {
+      console.error(`[PV Optimizer] Error rendering ${componentName}:`, error);
+
+      // Store error for potential reporting
+      if (!this._renderErrors) this._renderErrors = [];
+      this._renderErrors.push({
+        component: componentName,
+        error: error.message,
+        timestamp: new Date()
+      });
+
+      // Return fallback or default error UI
+      return fallback || html`
+        <div class="error-boundary">
+          <ha-icon icon="mdi:alert-circle" class="error-icon"></ha-icon>
+          <div class="error-content">
+            <h3>Error Loading ${componentName}</h3>
+            <p>${error.message || 'An unexpected error occurred'}</p>
+            <mwc-button @click=${() => this._fetchConfig()}>
+              <ha-icon icon="mdi:refresh"></ha-icon>
+              Retry
+            </mwc-button>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  /**
+   * Safe data accessor with fallback
+   * @param {Object} obj - Object to access
+   * @param {string} path - Dot-notation path
+   * @param {*} defaultValue - Default value if path not found
+   * @returns {*} Value or default
+   */
+  _safeGet(obj, path, defaultValue = null) {
+    if (!obj) return defaultValue;
+    const value = path.split('.').reduce((acc, part) => acc?.[part], obj);
+    return value !== undefined && value !== null ? value : defaultValue;
+  }
+
   async _handleResetDevice(e, deviceName) {
     e.stopPropagation();
     if (!confirm(`Reset target state for ${deviceName}? This will clear the manual lock.`)) return;
@@ -290,8 +341,21 @@ class PvOptimizerPanel extends LitElement {
   _getIdealDevices(sensorName) {
     if (!this.hass) return [];
     const entity = this._findEntityByTranslationKey(sensorName);
-    return (entity?.attributes?.device_details || [])
+    const devices = (entity?.attributes?.device_details || [])
       .sort((a, b) => (a.priority || 99) - (b.priority || 99));
+
+    // Enrich devices with measured power from device state
+    return devices.map(device => {
+      // Find matching device in config to get state
+      const deviceData = this._config?.devices?.find(d => d.config.name === device.name);
+      const state = deviceData?.state || {};
+
+      return {
+        ...device,
+        measured_power: state.power_measured_average || state.power_measured || device.power || 0,
+        is_available: state.is_available !== undefined ? state.is_available : true
+      };
+    });
   }
 
   _getPowerBudget(key) {
@@ -382,92 +446,241 @@ class PvOptimizerPanel extends LitElement {
   }
 
   _renderOverview() {
-    const stats = this._config.optimizer_stats;
-    if (!stats) return html`<div class="loading">Loading statistics...</div>`;
-
-    const items = [
-      { label: this.t('system_overview.current_surplus', 'Current Surplus'), value: `${(stats.surplus_current || 0).toFixed(0)} W`, rawValue: stats.surplus_current, icon: "mdi:flash" },
-      { label: this.t('system_overview.avg_surplus', 'Avg Surplus'), value: `${(stats.surplus_average || 0).toFixed(0)} W`, rawValue: stats.surplus_average, icon: "mdi:chart-bell-curve-cumulative" },
-      { label: this.t('system_overview.potential_load', 'Rated Power'), value: `${(stats.power_rated_total || 0).toFixed(0)} W`, icon: "mdi:lightning-bolt-outline" },
-      { label: this.t('system_overview.active_load', 'Active Load'), value: `${(stats.power_measured_total || 0).toFixed(0)} W`, icon: "mdi:lightning-bolt" },
-      { label: this.t('system_overview.last_update', 'Last Update'), value: this._lastUpdateTimestamp ? this._lastUpdateTimestamp.toLocaleTimeString() : 'N/A', icon: "mdi:clock-outline" },
-      { label: this.t('system_overview.age', 'Age'), value: this._elapsedSeconds !== null ? `${this._elapsedSeconds}s` : 'N/A', icon: "mdi:timer-outline" },
-    ];
-
-    return html`
-      <div class="stats-grid">
-        ${items.map(item => html`
-          <div class="stat-item">
-            <div class="stat-icon">
-              <ha-icon icon="${item.icon}"></ha-icon>
+    return this._renderWithErrorBoundary(
+      () => {
+        const stats = this._config.optimizer_stats;
+        if (!stats) {
+          return html`
+            <div class="loading-state">
+              <ha-icon icon="mdi:loading" class="spinning"></ha-icon>
+              <p>Loading statistics...</p>
             </div>
-            <div class="stat-content">
-              <span class="stat-label">${item.label}</span>
-              <span class="stat-value ${item.rawValue < 0 ? 'negative' : ''}">${item.value}</span>
-            </div>
+          `;
+        }
+
+        const items = [
+          {
+            label: this.t('system_overview.current_surplus', 'Current Surplus'),
+            value: `${this._safeGet(stats, 'surplus_current', 0).toFixed(0)} W`,
+            rawValue: stats.surplus_current,
+            icon: "mdi:flash"
+          },
+          {
+            label: this.t('system_overview.avg_surplus', 'Avg Surplus'),
+            value: `${this._safeGet(stats, 'surplus_average', 0).toFixed(0)} W`,
+            rawValue: stats.surplus_average,
+            icon: "mdi:chart-bell-curve-cumulative"
+          },
+          {
+            label: this.t('system_overview.potential_load', 'Rated Power'),
+            value: `${this._safeGet(stats, 'power_rated_total', 0).toFixed(0)} W`,
+            icon: "mdi:lightning-bolt-outline"
+          },
+          {
+            label: this.t('system_overview.active_load', 'Active Load'),
+            value: `${this._safeGet(stats, 'power_measured_total', 0).toFixed(0)} W`,
+            icon: "mdi:lightning-bolt"
+          },
+          {
+            label: this.t('system_overview.last_update', 'Last Update'),
+            value: this._lastUpdateTimestamp ? this._lastUpdateTimestamp.toLocaleTimeString() : 'N/A',
+            icon: "mdi:clock-outline"
+          },
+          {
+            label: this.t('system_overview.age', 'Age'),
+            value: this._elapsedSeconds !== null ? `${this._elapsedSeconds}s` : 'N/A',
+            icon: "mdi:timer-outline"
+          },
+        ];
+
+        return html`
+          <div class="stats-grid">
+            ${items.map(item => html`
+              <div class="stat-item">
+                <div class="stat-icon">
+                  <ha-icon icon="${item.icon}"></ha-icon>
+                </div>
+                <div class="stat-content">
+                  <span class="stat-label">${item.label}</span>
+                  <span class="stat-value ${item.rawValue < 0 ? 'negative' : ''}">${item.value}</span>
+                </div>
+              </div>
+            `)}
           </div>
-        `)}
-      </div>
-    `;
+        `;
+      },
+      'System Overview'
+    );
   }
 
   _renderCharts() {
-    if (!this._historyData) return html`<div class="loading">Loading charts...</div>`;
+    return this._renderWithErrorBoundary(
+      () => {
+        if (!this._historyData) {
 
-    // Prepare data for ApexCharts
-    const snapshots = this._historyData.snapshots || [];
-    if (snapshots.length === 0) return html`<div class="info">No historical data available yet.</div>`;
+          return html`<div class="loading-state">
+            <ha-icon icon="mdi:loading" class="spinning"></ha-icon>
+            <p>Loading charts...</p>
+          </div>`;
+        }
 
-    // Extract series data
-    const timestamps = snapshots.map(s => new Date(s.timestamp).getTime());
+        // Prepare data for ApexCharts
+        const snapshots = this._historyData.snapshots || [];
 
-    // 1. Surplus & Budget Series
-    const surplusSeries = snapshots.map(s => [new Date(s.timestamp).getTime(), s.surplus_average]);
-    const budgetSeries = snapshots.map(s => [new Date(s.timestamp).getTime(), s.budget_real]);
 
-    // 2. Active Devices Stacked Series
-    // Get all unique device names
+        if (snapshots.length === 0) {
+          return html`<div class="loading-state">
+            <ha-icon icon="mdi:information-outline"></ha-icon>
+            <p>No historical data available yet.</p>
+            <p style="font-size: 0.9em; color: var(--secondary-text-color);">Data will appear after the optimizer runs for a few minutes.</p>
+          </div>`;
+        }
+
+        return html`
+          <div class="charts-container">
+            <!-- Surplus Trend Chart -->
+            <apexcharts-card id="surplus-chart" .hass=${this.hass}></apexcharts-card>
+
+            <!-- Active Devices Stacked Area Chart -->
+            <apexcharts-card id="device-chart" .hass=${this.hass}></apexcharts-card>
+          </div>
+        `;
+      },
+      'Charts'
+    );
+  }
+
+  updated(changedProps) {
+    super.updated(changedProps);
+
+    if (this._currentTab === 'charts') {
+      // Only update charts if history data changed or we just switched to charts tab
+      if (changedProps.has('_historyData') || changedProps.has('_currentTab')) {
+        this._updateCharts();
+      }
+    }
+  }
+
+  async _updateCharts() {
+    if (!this._historyData?.snapshots?.length) return;
+
+    // Wait for apexcharts-card to be defined
+    await customElements.whenDefined('apexcharts-card');
+
+    const snapshots = this._historyData.snapshots;
+
+    // Find a valid entity to use as a dummy for the chart
+    // ApexCharts Card requires an existing entity to be configured
+    const findValidEntity = () => {
+      // Try specific PV Optimizer sensors first
+      const preferred = [
+        'sensor.pv_optimizer_power_budget',
+        'sensor.pv_optimizer_surplus_average',
+        'sensor.pv_optimizer_surplus_avg'
+      ];
+
+      for (const id of preferred) {
+        if (this.hass.states[id]) return id;
+      }
+
+      // Try any sensor from this integration
+      const pvoSensor = Object.keys(this.hass.states).find(id =>
+        id.startsWith('sensor.pv_optimizer_') && !id.includes('unavailable')
+      );
+      if (pvoSensor) return pvoSensor;
+
+      // Fallback to common system sensors
+      if (this.hass.states['sun.sun']) return 'sun.sun';
+      if (this.hass.states['sensor.date']) return 'sensor.date';
+      if (this.hass.states['sensor.time']) return 'sensor.time';
+
+      // Last resort - just use the first available sensor
+      return Object.keys(this.hass.states).find(id => id.startsWith('sensor.')) || 'sun.sun';
+    };
+
+    const dummyEntity = findValidEntity();
+    console.log('[PV Optimizer] Selected dummy entity:', dummyEntity);
+    console.log('[PV Optimizer] Entity state:', this.hass.states[dummyEntity]);
+
+    if (!this.hass.states[dummyEntity]) {
+      console.warn('[PV Optimizer] WARNING: Selected entity does not exist in hass.states!');
+      console.log('[PV Optimizer] Available sensors:', Object.keys(this.hass.states).filter(k => k.startsWith('sensor.pv')));
+    }
+
+    // Prepare Data
+    const surplusData = snapshots.map(s => [
+      new Date(s.timestamp).getTime(),
+      s.surplus_average || s.averaged_surplus || 0
+    ]);
+
+    const budgetData = snapshots.map(s => [
+      new Date(s.timestamp).getTime(),
+      s.budget_real || s.power_budget || 0
+    ]);
+
+    // Get unique devices
     const deviceNames = new Set();
     snapshots.forEach(s => {
-      s.active_devices.forEach(d => deviceNames.add(d.name));
+      if (s.active_devices && Array.isArray(s.active_devices)) {
+        s.active_devices.forEach(d => deviceNames.add(d.name));
+      }
     });
 
-    const deviceSeries = Array.from(deviceNames).map(name => {
-      return {
-        name: name,
-        data: snapshots.map(s => {
-          const device = s.active_devices.find(d => d.name === name);
-          return [new Date(s.timestamp).getTime(), device ? device.power_measured : 0];
-        })
-      };
-    });
+    // Configure Surplus Chart
+    const surplusChart = this.shadowRoot.getElementById('surplus-chart');
+    if (surplusChart) {
+      surplusChart.setConfig({
+        type: 'custom:apexcharts-card',
+        chart_type: 'line',
+        graph_span: '24h',
+        header: { show: true, title: this.t('charts.surplus_trend', 'Surplus Trend'), show_states: true },
+        series: [
+          {
+            entity: dummyEntity,
+            name: 'Avg Surplus',
+            color: '#2196f3',
+            type: 'line',
+            data_generator: `return ${JSON.stringify(surplusData)};`
+          },
+          {
+            entity: dummyEntity,
+            name: 'Power Budget',
+            color: '#ff9800',
+            type: 'line',
+            data_generator: `return ${JSON.stringify(budgetData)};`
+          }
+        ]
+      });
+    }
 
-    return html`
-      <div class="charts-container">
-        <!-- Surplus Trend Chart -->
-        <apexcharts-card
-          .hass=${this.hass}
-          chart_type="line"
-          graph_span="24h"
-          header='{"show": true, "title": "${this.t('charts.surplus_trend', 'Surplus Trend')}", "show_states": true}'
-          series='[
-            {"data": ${JSON.stringify(surplusSeries)}, "name": "Avg Surplus", "color": "#2196f3", "type": "line"},
-            {"data": ${JSON.stringify(budgetSeries)}, "name": "Power Budget", "color": "#ff9800", "type": "line"}
-          ]'
-        ></apexcharts-card>
+    // Configure Device Chart
+    const deviceChart = this.shadowRoot.getElementById('device-chart');
+    if (deviceChart) {
+      const deviceSeries = Array.from(deviceNames).map(name => {
+        const data = snapshots.map(s => {
+          const device = s.active_devices?.find(d => d.name === name);
+          return [new Date(s.timestamp).getTime(), device ? (device.power_measured || device.power || 0) : 0];
+        });
 
-        <!-- Active Devices Stacked Area Chart -->
-        <apexcharts-card
-          .hass=${this.hass}
-          chart_type="area"
-          stacked="true"
-          graph_span="24h"
-          header='{"show": true, "title": "${this.t('charts.active_devices_power', 'Active Devices Power')}", "show_states": true}'
-          series='${JSON.stringify(deviceSeries)}'
-        ></apexcharts-card>
-      </div>
-    `;
+        return {
+          entity: dummyEntity,
+          name: name,
+          type: 'area',
+          data_generator: `return ${JSON.stringify(data)};`
+        };
+      });
+
+      deviceChart.setConfig({
+        type: 'custom:apexcharts-card',
+        chart_type: 'line',
+        stacked: true,
+        graph_span: '24h',
+        header: { show: true, title: this.t('charts.active_devices_power', 'Active Devices Power'), show_states: true },
+        series: deviceSeries
+      });
+    }
   }
+
 
   _renderStatistics() {
     if (!this._statisticsData) return html`<div class="loading">Loading statistics...</div>`;
@@ -541,14 +754,14 @@ class PvOptimizerPanel extends LitElement {
         if (sensorKey === 'simulation_ideal_devices') {
           powerToUse = config.power || 0;
         } else {
-          powerToUse = state.power_measured !== undefined ? state.power_measured : (config.power || 0);
+          powerToUse = state.power_measured_average !== undefined ? state.power_measured_average : (config.power || 0);
         }
 
         budget += powerToUse;
         devices.push({
           name: config.name,
           power: config.power || 0,
-          measured_power: state.power_measured,
+          measured_power: state.power_measured_average,
           priority: config.priority || 5
         });
       });
@@ -559,6 +772,9 @@ class PvOptimizerPanel extends LitElement {
 
     // Calculate total power for the bar
     const totalPower = devices.reduce((sum, d) => {
+      // Unavailable devices don't contribute to power usage
+      if (!d.is_available) return sum;
+
       let powerToUse;
       if (sensorKey === 'simulation_ideal_devices') {
         powerToUse = d.power || 0;
@@ -599,6 +815,9 @@ class PvOptimizerPanel extends LitElement {
             <div class="progress-track" style="display: flex; overflow: hidden;">
               ${budget > 0 ? html`
                 ${devices.map((device, index) => {
+      // Unavailable devices show no bar segment
+      if (!device.is_available) return '';
+
       let power;
       if (sensorKey === 'simulation_ideal_devices') {
         power = device.power || 0;
@@ -611,6 +830,9 @@ class PvOptimizerPanel extends LitElement {
     })}
                 ${(() => {
           const usedPower = devices.reduce((sum, d) => {
+            // Unavailable devices don't use power
+            if (!d.is_available) return sum;
+
             let power;
             if (sensorKey === 'simulation_ideal_devices') {
               power = d.power || 0;
@@ -636,20 +858,26 @@ class PvOptimizerPanel extends LitElement {
             <div class="device-list-compact">
               ${devices.map((device, index) => {
           // Use measured power for Real, nominal for Simulation
+          // But use 0W for unavailable devices
           let power;
-          if (sensorKey === 'simulation_ideal_devices') {
+          if (!device.is_available) {
+            power = 0;
+          } else if (sensorKey === 'simulation_ideal_devices') {
             power = device.power || 0;
           } else {
             power = device.measured_power !== undefined ? device.measured_power : (device.power || 0);
           }
+
+          const isUnavailable = !device.is_available;
+
           return html`
-                  <div class="device-row">
+                  <div class="device-row ${isUnavailable ? 'unavailable' : ''}">
                     <div class="device-main">
-                      <div style="width: 8px; height: 8px; border-radius: 50%; background-color: ${this._getDeviceColor(index)}; margin-right: 8px; display: inline-block;"></div>
-                      <span class="device-name">${device.name}</span>
+                      <div style="width: 8px; height: 8px; border-radius: 50%; background-color: ${isUnavailable ? 'var(--disabled-text-color)' : this._getDeviceColor(index)}; margin-right: 8px; display: inline-block;"></div>
+                      <span class="device-name" style="${isUnavailable ? 'text-decoration: line-through; opacity: 0.6;' : ''}">${device.name}</span>
                       <span class="device-meta">${this.t('common.prio', 'Prio')} ${device.priority}</span>
                     </div>
-                    <div class="device-power">${power.toFixed(0)} W</div>
+                    <div class="device-power" style="${isUnavailable ? 'opacity: 0.6;' : ''}">${power.toFixed(0)} W</div>
                   </div>
                 `;
         })}
@@ -757,10 +985,10 @@ class PvOptimizerPanel extends LitElement {
               <span class="label">${this.t('managed_devices.rated', 'Rated')}</span>
               <span class="value">${device.power} W</span>
             </div>
-            ${state.measured_power_avg ? html`
+            ${state.power_measured_average ? html`
               <div class="stat">
                 <span class="label">${this.t('managed_devices.measured', 'Measured')}</span>
-                <span class="value">${state.measured_power_avg.toFixed(0)} W</span>
+                <span class="value">${state.power_measured_average.toFixed(0)} W</span>
               </div>
             ` : ''}
           </div>
@@ -1245,10 +1473,26 @@ class PvOptimizerPanel extends LitElement {
         margin-bottom: 16px;
         color: var(--primary-text-color);
       }
+      /* Charts */
+      .charts-container {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        padding-bottom: 24px;
+      }
+      
       .loading-screen {
         display: flex;
         justify-content: center;
         padding: 40px;
+      }
+      
+      /* Charts */
+      .charts-container {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        padding-bottom: 24px;
       }
       
       /* Responsive */
@@ -1357,8 +1601,81 @@ class PvOptimizerPanel extends LitElement {
           padding: 12px;
         }
       }
+
+      /* Error Boundaries & Loading States */
+      .error-boundary {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 48px 24px;
+        text-align: center;
+        background: var(--card-background-color, #fff);
+        border-radius: var(--ha-card-border-radius, 12px);
+        border: 2px dashed var(--error-color);
+      }
+
+      .error-icon {
+        --mdc-icon-size: 48px;
+        color: var(--error-color);
+        margin-bottom: 16px;
+      }
+
+      .error-content h3 {
+        margin: 0 0 8px 0;
+        color: var(--primary-text-color);
+        font-size: 18px;
+        font-weight: 500;
+      }
+
+      .error-content p {
+        margin: 0 0 24px 0;
+        color: var(--secondary-text-color);
+        font-size: 14px;
+        max-width: 400px;
+      }
+
+      .error-content mwc-button {
+        --mdc-theme-primary: var(--primary-color);
+      }
+
+      .loading-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 48px 24px;
+        text-align: center;
+      }
+
+      .loading-state ha-icon {
+        --mdc-icon-size: 48px;
+        color: var(--primary-color);
+        margin-bottom: 16px;
+      }
+
+      .loading-state p {
+        margin: 0;
+        color: var(--secondary-text-color);
+        font-size: 14px;
+      }
+
+      .spinning {
+        animation: spin 2s linear infinite;
+      }
+
+      @keyframes spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
     `;
   }
 }
 
-window.customElements.define("pv-optimizer-panel", PvOptimizerPanel);
+if (!customElements.get("pv-optimizer-panel")) {
+  window.customElements.define("pv-optimizer-panel", PvOptimizerPanel);
+}
