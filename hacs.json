@@ -1,7 +1,6 @@
 {
     "name": "PV Optimizer",
     "render_readme": true,
-    "content_in_root": true,
     "country": "EU",
     "homeassistant": "2025.10"
 }
