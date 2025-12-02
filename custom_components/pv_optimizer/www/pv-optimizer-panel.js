@@ -629,6 +629,8 @@ class PvOptimizerPanel extends LitElement {
       });
     }
 
+
+
     const deviceSeries = Array.from(deviceNames).map(name => {
       return {
         name: name,
@@ -907,7 +909,7 @@ class PvOptimizerPanel extends LitElement {
       if (sensorKey === 'simulation_ideal_devices') {
         power = device.power || 0;
       } else {
-        power = device.measured_power !== undefined ? device.measured_average : (device.power || 0);
+        power = device.measured_power !== undefined ? device.measured_power : (device.power || 0);
       }
       const width = Math.min((power / budget) * 100, 100);
       // Get device color from config
@@ -956,11 +958,14 @@ class PvOptimizerPanel extends LitElement {
           }
 
           const isUnavailable = !device.is_available;
+          // Get device color from config
+          const deviceData = this._config?.devices?.find(d => d.config.name === device.name);
+          const color = deviceData?.config?.device_color || this._getDeviceColor(index);
 
           return html`
                   <div class="device-row ${isUnavailable ? 'unavailable' : ''}">
                     <div class="device-main">
-                      <div style="width: 8px; height: 8px; border-radius: 50%; background-color: ${isUnavailable ? 'var(--disabled-text-color)' : this._getDeviceColor(index)}; margin-right: 8px; display: inline-block;"></div>
+                      <div style="width: 8px; height: 8px; border-radius: 50%; background-color: ${isUnavailable ? 'var(--disabled-text-color)' : color}; margin-right: 8px; display: inline-block;"></div>
                       <span class="device-name" style="${isUnavailable ? 'text-decoration: line-through; opacity: 0.6;' : ''}">${device.name}</span>
                       <span class="device-meta">${this.t('common.prio', 'Prio')} ${device.priority}</span>
                     </div>
@@ -1040,22 +1045,15 @@ class PvOptimizerPanel extends LitElement {
     return html`
       <ha-card class="device-card ${isOn ? 'active' : ''}">
         <div class="device-header">
-        <div class="device-title" style="${isUnavailable ? 'text-decoration: line-through; opacity: 0.6;' : ''}">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <input 
-              type="color" 
-              value="${device.device_color || '#4CAF50'}" 
-              @input=${(e) => this._handleColorChange(e, device.name)}
-              style="width: 24px; height: 24px; border: 2px solid var(--divider-color); border-radius: 50%; cursor: pointer; padding: 0;"
-              title="Click to change device color"
-            />
-            <ha-icon icon=${isOn ? "mdi:power-plug" : "mdi:power-plug-off"} class="device-icon"></ha-icon>
-            ${state.device_id
+      <div class="device-title" style="${isUnavailable ? 'text-decoration: line-through; opacity: 0.6;' : ''}">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <ha-icon icon=${isOn ? "mdi:power-plug" : "mdi:power-plug-off"} class="device-icon"></ha-icon>
+          ${state.device_id
         ? html`<a href="/config/devices/device/${state.device_id}" target="_blank" style="color: inherit; text-decoration: none;">${device.name}</a>`
         : device.name
       }
-          </div>
         </div>
+      </div>
           <div class="lock-icons">
             ${state.is_locked_timing ? html`<ha-icon icon="mdi:timer-lock" title="Timing Lock: Device cannot be controlled due to Min On/Off time constraints" class="lock-icon"></ha-icon>` : ''}
             ${state.is_locked_manual ? html`<ha-icon icon="mdi:account-lock" title="Manual Lock: Device state was manually changed by user" class="lock-icon"></ha-icon>` : ''}
@@ -1071,10 +1069,17 @@ class PvOptimizerPanel extends LitElement {
         </div>
         
         <div class="device-body">
-          <div class="chip-container">
-            <span class="chip type">${device.type}</span>
-            <span class="chip priority">${this.t('common.prio', 'Prio')} ${device.priority}</span>
-          </div>
+        <div class="chip-container">
+          <input 
+            type="color" 
+            value="${device.device_color || '#4CAF50'}" 
+            @input=${(e) => this._handleColorChange(e, device.name)}
+            style="width: 20px; height: 20px; border: none; background: none; cursor: pointer; padding: 0;"
+            title="Click to change device color"
+          />
+          <span class="chip type">${device.type}</span>
+          <span class="chip priority">${this.t('common.prio', 'Prio')} ${device.priority}</span>
+        </div>
           
           <div class="device-stats">
             <div class="stat">

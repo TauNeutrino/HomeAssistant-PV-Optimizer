@@ -112,6 +112,26 @@ DEVICE_COLORS = [
 
 
 # ============================================================================
+# DEVICE COLORS
+# ============================================================================
+# Predefined color palette for device visualization
+# These colors are used consistently across charts, power bars, and device cards
+
+DEVICE_COLORS = [
+    '#4CAF50',  # Green
+    '#2196F3',  # Blue
+    '#FFC107',  # Amber
+    '#9C27B0',  # Purple
+    '#F44336',  # Red
+    '#00BCD4',  # Cyan
+    '#FF9800',  # Orange
+    '#795548',  # Brown
+    '#607D8B',  # Blue Grey
+    '#E91E63'   # Pink
+]
+
+
+# ============================================================================
 # GLOBAL CONFIGURATION CONSTANTS
 # ============================================================================
 # These settings apply to the entire PV Optimizer system and are configured
@@ -195,6 +215,10 @@ CONF_SIMULATION_ACTIVE = "simulation_active"
 CONF_MEASURED_POWER_ENTITY_ID = "measured_power_entity_id"
 # Threshold in Watts to determine if device is ON (when using power sensor)
 CONF_POWER_THRESHOLD = "power_threshold"
+
+# Device Color
+# Hex color code for consistent visualization across UI elements
+CONF_DEVICE_COLOR = "device_color"
 
 # Device Color
 # Hex color code for consistent visualization across UI elements

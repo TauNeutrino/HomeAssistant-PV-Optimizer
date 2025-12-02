@@ -14,13 +14,21 @@ import voluptuous as vol
 from datetime import datetime
 
 from homeassistant.components import websocket_api
-from homeassistant.core import callback
+from homeassistant.core import callback, HomeAssistant
 from homeassistant.loader import async_get_integration
 
 from .const import DOMAIN
 from .coordinators import ServiceCoordinator, DeviceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _get_service_entry(hass):
+    """Get the service config entry if it exists."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.data.get("entry_type") == "service":
+            return entry
+    return None
 
 
 async def async_setup_connection(hass):
@@ -313,5 +321,7 @@ async def async_setup_connection(hass):
             connection.send_error(msg["id"], "update_failed", str(e))
     
     websocket_api.async_register_command(hass, handle_update_device_color)
+    
+
     
     _LOGGER.info("WebSocket API handlers registered for PV Optimizer")
