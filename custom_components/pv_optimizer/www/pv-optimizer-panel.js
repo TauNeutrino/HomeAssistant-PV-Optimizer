@@ -29,6 +29,7 @@ class PvOptimizerPanel extends LitElement {
       _historyData: { type: Object, state: true },
       _statisticsData: { type: Object, state: true },
       _apexChartsLoaded: { type: Boolean, state: true },
+      _chartTimeRange: { type: String, state: true },
     };
   }
 
@@ -42,7 +43,9 @@ class PvOptimizerPanel extends LitElement {
     this._secondInterval = null;
     this._lastUpdateTimestamp = null;
     this._elapsedSeconds = null;
-    this._currentTab = 'overview';
+    this._currentTab = 'overview';  // overview | charts | stats
+    this._apexChartsLoaded = false;
+    this._chartTimeRange = 'today'; // today | 7days
     this._historyData = null;
     this._statisticsData = null;
   }
@@ -297,9 +300,22 @@ class PvOptimizerPanel extends LitElement {
 
   async _fetchHistory() {
     try {
+      // Calculate hours based on time range selection
+      let hours;
+      if (this._chartTimeRange === 'today') {
+        // Calculate hours since midnight
+        const now = new Date();
+        const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        hours = Math.ceil((now - midnight) / (1000 * 60 * 60)); // Convert ms to hours
+      } else if (this._chartTimeRange === '7days') {
+        hours = 7 * 24; // 168 hours
+      } else {
+        hours = 24; // Default fallback
+      }
+
       const response = await this.hass.callWS({
         type: "pv_optimizer/history",
-        hours: 24
+        hours: hours
       });
       this._historyData = response;
     } catch (err) {
@@ -557,6 +573,22 @@ class PvOptimizerPanel extends LitElement {
         }
 
         return html`
+          <div class="chart-controls">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em;">
+              <span>Time Range:</span>
+              <select 
+                .value=${this._chartTimeRange}
+                @change=${(e) => {
+            this._chartTimeRange = e.target.value;
+            this._fetchHistory();
+          }}
+                style="padding: 4px 8px; border: 1px solid var(--divider-color); border-radius: 4px; background: var(--card-background-color); color: var(--primary-text-color); cursor: pointer;"
+              >
+                <option value="today">Today</option>
+                <option value="7days">Last 7 Days</option>
+              </select>
+            </label>
+          </div>
           <div class="charts-container">
             <div class="chart-wrapper">
               <h3 class="chart-title">${this.t('charts.surplus_trend', 'Surplus Trend')}</h3>
@@ -629,16 +661,20 @@ class PvOptimizerPanel extends LitElement {
       });
     }
 
+    // Build series and colors in parallel to ensure correct mapping
+    const deviceSeriesData = [];
+    const deviceColorsData = [];
 
-
-    const deviceSeries = Array.from(deviceNames).map(name => {
-      return {
+    Array.from(deviceNames).forEach(name => {
+      const color = deviceColorMap[name] || this._getDeviceColor(deviceSeriesData.length);
+      deviceColorsData.push(color);
+      deviceSeriesData.push({
         name: name,
         data: snapshots.map(s => {
           const device = s.active_devices?.find(d => d.name === name);
           return [new Date(s.timestamp).getTime(), device ? (device.power_measured || device.power || 0) : 0];
         })
-      };
+      });
     });
 
     // Common options
@@ -698,15 +734,14 @@ class PvOptimizerPanel extends LitElement {
     });
 
     // Render Device Chart
-    const deviceColors = Array.from(deviceNames).map(name => deviceColorMap[name] || '#4CAF50');
     this._renderApexChart('device-chart', {
       ...commonOptions,
       chart: { ...commonOptions.chart, type: 'area', stacked: true, id: 'device-chart' },
-      colors: deviceColors,
-      stroke: { curve: 'stepline', width: 1 },
-      fill: { type: 'gradient', gradient: { opacityFrom: 0.6, opacityTo: 0.1 } },
+      colors: deviceColorsData,
+      stroke: { curve: 'stepline', width: 0 },
+      fill: { type: 'solid', opacity: 0.95 },
       dataLabels: { enabled: false },
-      series: deviceSeries
+      series: deviceSeriesData
     });
   }
 
@@ -1679,6 +1714,16 @@ class PvOptimizerPanel extends LitElement {
         font-size: 16px;
         font-weight: 500;
         color: var(--primary-text-color);
+      }
+      
+      .chart-controls {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 16px;
+        padding: 8px 12px;
+        background: rgba(var(--rgb-primary-color), 0.05);
+        border-radius: 8px;
+        border: 1px solid var(--divider-color);
       }
       
       .chart-div {
