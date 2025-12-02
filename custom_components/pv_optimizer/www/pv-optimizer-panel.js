@@ -668,14 +668,20 @@ class PvOptimizerPanel extends LitElement {
     Array.from(deviceNames).forEach(name => {
       const color = deviceColorMap[name] || this._getDeviceColor(deviceSeriesData.length);
       deviceColorsData.push(color);
+
+      const seriesData = snapshots.map(s => {
+        const device = s.active_devices?.find(d => d.name === name);
+        return [new Date(s.timestamp).getTime(), device ? (device.power_measured || device.power || 0) : 0];
+      });
+
       deviceSeriesData.push({
         name: name,
-        data: snapshots.map(s => {
-          const device = s.active_devices?.find(d => d.name === name);
-          return [new Date(s.timestamp).getTime(), device ? (device.power_measured || device.power || 0) : 0];
-        })
+        data: seriesData
       });
     });
+
+    // Check if we have any data
+    const hasData = deviceSeriesData.some(series => series.data.some(point => point[1] > 0));
 
     // Common options
     const commonOptions = {
@@ -741,6 +747,12 @@ class PvOptimizerPanel extends LitElement {
       stroke: { curve: 'stepline', width: 0 },
       fill: { type: 'solid', opacity: 0.95 },
       dataLabels: { enabled: false },
+      yaxis: {
+        min: 0,
+        labels: {
+          formatter: (value) => Math.round(value) + 'W'
+        }
+      },
       series: deviceSeriesData
     });
   }
@@ -754,13 +766,11 @@ class PvOptimizerPanel extends LitElement {
     // Check if chart instance exists
     if (this._charts[elementId]) {
       try {
-        // Only update series data to preserve zoom state
-        if (options.series) {
-          this._charts[elementId].updateSeries(options.series, false);
-        }
+        // Destroy and recreate to ensure colors and all options are applied correctly
+        this._charts[elementId].destroy();
+        this._createChart(elementId, element, options);
       } catch (e) {
         console.warn('Failed to update chart, recreating...', e);
-        this._charts[elementId].destroy();
         this._createChart(elementId, element, options);
       }
     } else {
