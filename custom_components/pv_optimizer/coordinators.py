@@ -86,6 +86,9 @@ class DeviceCoordinator(DataUpdateCoordinator):
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the device coordinator."""
         device_config = config_entry.data.get("device_config", {})
+        # Create a copy to ensure we don't modify config_entry.data in place
+        # This ensures async_update_entry detects changes correctly
+        device_config = dict(device_config)
         device_name = device_config.get(CONF_NAME, "Unknown")
         
         super().__init__(
@@ -98,15 +101,6 @@ class DeviceCoordinator(DataUpdateCoordinator):
         self.device_config = device_config
         self.device_name = device_name
         self.device_id = None  # Will be populated on first update
-        
-        # Backwards compatibility: Assign random color if not present
-        if CONF_DEVICE_COLOR not in self.device_config:
-            import random
-            self.device_config[CONF_DEVICE_COLOR] = random.choice(DEVICE_COLORS)
-            # Update config entry with the new color
-            new_data = dict(config_entry.data)
-            new_data["device_config"] = self.device_config
-            hass.config_entries.async_update_entry(config_entry, data=new_data)
         
         # Backwards compatibility: Assign random color if not present
         if CONF_DEVICE_COLOR not in self.device_config:
