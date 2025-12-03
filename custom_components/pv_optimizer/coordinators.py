@@ -485,8 +485,19 @@ class DeviceCoordinator(DataUpdateCoordinator):
 
     async def reset_target_state(self) -> None:
         """Reset the last target state to None."""
-        self.device_state[ATTR_PVO_LAST_TARGET_STATE] = None
-        self.device_state[ATTR_PVO_LAST_TARGET_STATE] = None
+        # Check if device is in an indeterminate state (neither ON nor OFF)
+        # This happens for numeric devices when manually set to a value that matches neither target
+        is_on = self.device_instance.is_on() if self.device_instance else False
+        is_off = self.device_instance.is_off() if self.device_instance else False
+        is_indeterminate = not is_on and not is_off
+
+        if is_indeterminate and self.device_instance:
+            _LOGGER.info(f"Resetting indeterminate device {self.device_name} to deactivated state to clear manual lock")
+            await self.device_instance.deactivate()
+            self.device_state[ATTR_PVO_LAST_TARGET_STATE] = False
+        else:
+            self.device_state[ATTR_PVO_LAST_TARGET_STATE] = None
+            
         await self._async_save_state()
         _LOGGER.info(f"Reset target state for device: {self.device_name}")
         

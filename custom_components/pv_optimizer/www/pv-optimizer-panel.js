@@ -683,6 +683,15 @@ class PvOptimizerPanel extends LitElement {
     // Check if we have any data
     const hasData = deviceSeriesData.some(series => series.data.some(point => point[1] > 0));
 
+    // If no device data, add a dummy series to preserve x-axis
+    if (deviceSeriesData.length === 0) {
+      deviceSeriesData.push({
+        name: 'No Activity',
+        data: snapshots.map(s => [new Date(s.timestamp).getTime(), 0])
+      });
+      deviceColorsData.push('transparent');
+    }
+
     // Common options
     const commonOptions = {
       chart: {
@@ -749,6 +758,7 @@ class PvOptimizerPanel extends LitElement {
       dataLabels: { enabled: false },
       yaxis: {
         min: 0,
+        max: hasData ? undefined : 100, // Default max to prevent weird scaling when empty
         labels: {
           formatter: (value) => Math.round(value) + 'W'
         }
@@ -1307,7 +1317,7 @@ class PvOptimizerPanel extends LitElement {
 
       .dashboard-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
         gap: 24px;
         margin-top: 24px;
         align-items: start;
@@ -1317,7 +1327,7 @@ class PvOptimizerPanel extends LitElement {
         display: flex;
         flex-direction: column;
         gap: 24px;
-        min-width: 350px;
+        min-width: 400px;
       }
 
       .dual-grid {
@@ -1536,7 +1546,6 @@ class PvOptimizerPanel extends LitElement {
         color: var(--secondary-text-color);
       }
       .device-stats {
-        display: flex;
         justify-content: space-between;
         font-size: 13px;
         gap: 8px;
