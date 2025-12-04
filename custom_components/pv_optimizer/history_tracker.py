@@ -24,6 +24,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 
+from .const import ATTR_PVO_LAST_TARGET_STATE
+
 _LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION = 1
@@ -97,7 +99,11 @@ class HistoryTracker:
             active_count = 0
             for device_name, device_data in devices_state.items():
                 is_on = device_data.get("is_on", False)
-                if is_on:
+                # Only include device if it is ON and was turned ON by the optimizer
+                # This filters out manual activations
+                last_target = device_data.get(ATTR_PVO_LAST_TARGET_STATE)
+                
+                if is_on and last_target is True:
                     snapshot["active_devices"].append({
                         "name": device_name,
                         "power_measured": device_data.get("power_measured", device_data.get("power_measured_average", 0)),
