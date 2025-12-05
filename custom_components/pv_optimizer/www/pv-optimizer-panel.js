@@ -1103,7 +1103,7 @@ class PvOptimizerPanel extends LitElement {
         <div style="display: flex; align-items: center; gap: 8px;">
           <ha-icon icon=${isOn ? "mdi:power-plug" : "mdi:power-plug-off"} class="device-icon"></ha-icon>
           ${state.device_id
-        ? html`<a href="/config/devices/device/${state.device_id}" target="_blank" style="color: inherit; text-decoration: none;">${device.name}</a>`
+        ? html`<a href="/config/devices/device/${state.device_id}" style="color: inherit; text-decoration: none;">${device.name}</a>`
         : device.name
       }
         </div>
