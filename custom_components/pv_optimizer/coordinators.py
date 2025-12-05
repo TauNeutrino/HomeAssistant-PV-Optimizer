@@ -240,7 +240,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
         measured_power_avg = await self._get_averaged_power(now, global_config)
         
         # Determine lock status
-        locked_timing, locked_manual = self._get_lock_status(is_on, is_indeterminate)
+        locked_timing, locked_manual, lock_reason = self._get_lock_status(is_on, is_indeterminate)
         is_locked = locked_timing or locked_manual
         
         # Check availability of underlying entities
@@ -288,7 +288,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
                  self.device_state[ATTR_PVO_LAST_TARGET_STATE] = False
                  self.last_switch_time = now
                  # Recalculate lock status with new state (though likely irrelevant as it's off)
-                 locked_timing, locked_manual = self._get_lock_status(is_on, is_indeterminate)
+                 locked_timing, locked_manual, lock_reason = self._get_lock_status(is_on, is_indeterminate)
                  is_locked = locked_timing or locked_manual
 
         # Update state cache
@@ -299,6 +299,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
             ATTR_IS_LOCKED: is_locked,
             "is_locked_timing": locked_timing,
             "is_locked_manual": locked_manual,
+            "lock_reason": lock_reason,
             "is_available": is_available,
             "device_id": getattr(self, "device_id", None),
             ATTR_PVO_LAST_TARGET_STATE: self.device_state.get(ATTR_PVO_LAST_TARGET_STATE, is_on),
@@ -373,13 +374,14 @@ class DeviceCoordinator(DataUpdateCoordinator):
         state = self.hass.states.get(power_sensor)
         return float(state.state) if state and state.state not in ['unknown', 'unavailable'] else 0.0
 
-    def _get_lock_status(self, current_state: bool, is_indeterminate: bool = False) -> tuple[bool, bool]:
+    def _get_lock_status(self, current_state: bool, is_indeterminate: bool = False) -> tuple[bool, bool, str]:
         """
         Determine if device is locked.
-        Returns (locked_timing, locked_manual).
+        Returns (locked_timing, locked_manual, lock_reason).
         """
         now = dt_util.now()
         config = self.device_config
+        lock_reason = ""
         
         # 1. Timing Lock (Min On/Off Time)
         locked_timing = False
@@ -391,11 +393,15 @@ class DeviceCoordinator(DataUpdateCoordinator):
                 min_on = config.get(CONF_MIN_ON_TIME, 0)
                 if min_on > 0 and elapsed < min_on:
                     locked_timing = True
+                    remaining = min_on - elapsed
+                    lock_reason = f"Minimum on time: {remaining:.1f} min remaining"
             else:
                 # Currently OFF -> Check Min Off Time
                 min_off = config.get(CONF_MIN_OFF_TIME, 0)
                 if min_off > 0 and elapsed < min_off:
                     locked_timing = True
+                    remaining = min_off - elapsed
+                    lock_reason = f"Minimum off time: {remaining:.1f} min remaining"
         
         # 2. Manual Lock (User Intervention)
         locked_manual = False
@@ -403,19 +409,26 @@ class DeviceCoordinator(DataUpdateCoordinator):
         
         # Only lock if we have a known last target state that differs from current
         # If last_target is None (after reset or initial state), don't lock - allow optimizer to take control
-        # Only lock if we have a known last target state that differs from current
-        # If last_target is None (after reset or initial state), don't lock - allow optimizer to take control
         if is_indeterminate:
             locked_manual = True
-            details = self.device_instance.get_state_details() if self.device_instance else ""
-            _LOGGER.debug(f"{self.device_name}: Manual lock detected - Indeterminate state (custom value set). Details: {details}")
+            # Get detailed state information for numeric devices
+            if self.device_instance:
+                details = self.device_instance.get_state_details()
+                # get_state_details already includes header, so use it directly
+                lock_reason = details
+                _LOGGER.debug(f"{self.device_name}: Manual lock detected - {lock_reason}")
+            else:
+                lock_reason = "Manual Override - Device state manually changed"
         elif last_target is not None and current_state != last_target:
             locked_manual = True
-            _LOGGER.debug(f"{self.device_name}: Manual lock detected - current:{current_state}, target:{last_target}")
+            expected_state = "ON" if last_target else "OFF"
+            actual_state = "ON" if current_state else "OFF"  
+            lock_reason = f"Manual Override\nExpected: {expected_state}\nActual: {actual_state}"
+            _LOGGER.debug(f"{self.device_name}: Manual lock detected - {lock_reason}")
         elif last_target is None:
             _LOGGER.debug(f"{self.device_name}: No last target state (None) - allowing optimizer control")
             
-        return locked_timing, locked_manual
+        return locked_timing, locked_manual, lock_reason
 
     async def async_update_device_config(self, updates: Dict[str, Any]) -> None:
         """Update device configuration and persist to config entry."""
@@ -430,7 +443,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
                 is_on = self.device_instance.is_on() if self.device_instance else False
                 is_off = self.device_instance.is_off() if self.device_instance else True
                 is_indeterminate = not is_on and not is_off
-                locked_timing, _ = self._get_lock_status(is_on, is_indeterminate)
+                locked_timing, _, _ = self._get_lock_status(is_on, is_indeterminate)
                 
                 if not locked_timing:
                     _LOGGER.info(f"{self.device_name}: Optimization disabled. Turning OFF device immediately.")

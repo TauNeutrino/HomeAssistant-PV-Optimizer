@@ -304,16 +304,33 @@ class NumericDevice(PVDevice):
         return self.config.get("power", 0.0)
 
     def get_state_details(self) -> str:
-        """Return details about current numeric values."""
+        """Return details about current numeric values - only showing mismatches."""
         details = []
         for target in self.numeric_targets:
             entity_id = target[CONF_NUMERIC_ENTITY_ID]
             state = self.hass.states.get(entity_id)
-            current = state.state if state else "Unknown"
+            if not state:
+                continue
+                
+            try:
+                current = float(state.state)
+            except (ValueError, TypeError):
+                continue
+                
             active = target[CONF_ACTIVATED_VALUE]
             inactive = target[CONF_DEACTIVATED_VALUE]
-            details.append(f"{entity_id}={current} (Active={active}, Inactive={inactive})")
-        return ", ".join(details)
+            
+            # Only include if current value doesn't match either target
+            if current != active and current != inactive:
+                # Extract friendly name from entity_id (e.g., "temperature" from "number.device_temperature")
+                entity_name = entity_id.split('.')[-1].replace('_', ' ').title()
+                details.append(f"• {entity_name}: {current} (needs {active} or {inactive})")
+                
+        if not details:
+            return "All values match expected states"
+        
+        # Format with header and bullet points
+        return "Manual Override - Custom Values Set:\n" + "\n".join(details)
 
 
 def create_device(hass: HomeAssistant, device_config: Dict[str, Any]) -> Optional[PVDevice]:
