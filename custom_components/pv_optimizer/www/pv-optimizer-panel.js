@@ -408,31 +408,30 @@ class PvOptimizerPanel extends LitElement {
     const ready = !this._loading && !this._error && this._config;
 
     return html`
-      <div class="header">
-        <div class="header-content">
-          <div class="title">
-            ${this.narrow ? html`
-              <ha-menu-button
-                .hass=${this.hass}
-                .narrow=${this.narrow}
-              ></ha-menu-button>
-            ` : ""}
-            <div style="display: flex; align-items: center;">
-              <ha-icon icon="mdi:solar-power" style="margin-right: 10px;"></ha-icon>
-              PV Optimizer
-              ${this._config?.version ? html`<span class="version">v${this._config.version}</span>` : ""}
-            </div>
-          </div>
-          <div class="actions">
-            <ha-button @click=${this._openConfiguration} outlined style="--mdc-theme-primary: var(--app-header-text-color, white); border-color: rgba(255,255,255,0.5);">
-              <ha-icon slot="icon" icon="mdi:cog"></ha-icon>
-              ${this.t('header.configuration', 'Configuration')}
-            </ha-button>
-            <div class="status-indicator ${ready ? 'ready' : 'error'}" style="background: rgba(255,255,255,0.1); color: inherit;">
-              <ha-icon icon=${ready ? "mdi:check-circle" : "mdi:alert-circle"}></ha-icon>
-              ${ready ? this.t('header.system_ready', 'System Ready') : this.t('header.system_issue', 'System Issue')}
-            </div>
-          </div>
+      <div class="pvo-header">
+        ${this.narrow ? html`
+          <ha-menu-button
+            .hass=${this.hass}
+            .narrow=${this.narrow}
+          ></ha-menu-button>
+        ` : ""}
+        
+        <div class="pvo-title">
+          <ha-icon icon="mdi:solar-power"></ha-icon>
+          <span>PV Optimizer</span>
+          ${this._config?.version ? html`<span class="pvo-version">v${this._config.version}</span>` : ""}
+        </div>
+        
+        <div class="pvo-spacer"></div>
+        
+        <ha-button @click=${this._openConfiguration}>
+          <ha-icon slot="icon" icon="mdi:cog"></ha-icon>
+          ${this.t('header.configuration', 'Configuration')}
+        </ha-button>
+        
+        <div class="pvo-status ${ready ? 'ready' : 'error'}">
+          <ha-icon icon=${ready ? "mdi:check-circle" : "mdi:alert-circle"}></ha-icon>
+          <span>${ready ? this.t('header.system_ready', 'System Ready') : this.t('header.system_issue', 'System Issue')}</span>
         </div>
       </div>
     `;
@@ -1343,28 +1342,31 @@ class PvOptimizerPanel extends LitElement {
         align-items: start;
       }
 
-      /* Header */
-      .header {
-        background-color: var(--app-header-background-color, var(--primary-color));
-        color: var(--app-header-text-color, white);
-        padding: 10px 16px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.14);
-      }
-      .header-content {
+      /* PV Optimizer Header */
+      .pvo-header {
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        width: 100%;
-        height: 44px; /* Standard HA header height */
+        gap: 16px;
+        height: 64px;
+        padding: 0 16px;
+        background-color: var(--app-header-background-color, var(--primary-color));
+        color: var(--app-header-text-color, var(--text-primary-color));
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       }
-      .title {
+      
+      .pvo-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
         font-size: 20px;
         font-weight: 400;
-        display: flex;
-        align-items: center;
-        gap: 12px;
       }
-      .version {
+      
+      .pvo-spacer {
+        flex: 1;
+      }
+      
+      .pvo-version {
         font-size: 12px;
         opacity: 0.8;
         margin-left: 8px;
@@ -1373,12 +1375,8 @@ class PvOptimizerPanel extends LitElement {
         padding: 2px 6px;
         border-radius: 4px;
       }
-      .actions {
-        display: flex;
-        gap: 12px;
-        align-items: center;
-      }
-      .status-indicator {
+      
+      .pvo-status {
         display: flex;
         align-items: center;
         gap: 6px;
@@ -1386,10 +1384,10 @@ class PvOptimizerPanel extends LitElement {
         font-weight: 500;
         padding: 6px 12px;
         border-radius: 16px;
-        background: var(--secondary-background-color);
+        background: rgba(255, 255, 255, 0.1);
       }
-      .status-indicator.ready { color: var(--success-color); }
-      .status-indicator.error { color: var(--error-color); }
+      .pvo-status.ready { color: var(--success-color); }
+      .pvo-status.error { color: var(--error-color); }
 
       /* Cards */
       ha-card {
