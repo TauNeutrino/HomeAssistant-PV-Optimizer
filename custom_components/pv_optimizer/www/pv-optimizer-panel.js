@@ -1113,12 +1113,13 @@ class PvOptimizerPanel extends LitElement {
             ${state.is_fault_locked ? html`<ha-icon icon="mdi:alert-octagon" title="Device Fault - Failed to set value" class="lock-icon"></ha-icon>` : ''}
             ${state.is_locked_manual ? html`<span title="${state.lock_reason || 'Manual Lock: Device state was manually changed by user'}" class="lock-icon"><ha-icon icon="mdi:account-lock"></ha-icon></span>` : ''}
             ${(state.is_locked_timing || state.is_locked_manual || state.is_fault_locked) ? html`
-              <ha-icon 
-                icon="mdi:lock-open-variant" 
-                title="Reset Lock: Clear manual lock and allow optimizer to control this device" 
+              <ha-icon-button
+                icon="mdi:lock-open-variant"
+                label="Reset Lock"
+                title="Clear manual lock and allow optimizer to control this device"
                 class="reset-icon"
                 @click=${(e) => this._handleResetDevice(e, device.name)}
-              ></ha-icon>
+              ></ha-icon-button>
             ` : ''}
           </div>
         </div>
