@@ -48,10 +48,14 @@ class PvOptimizerPanel extends LitElement {
     this._chartTimeRange = 'today'; // today | 7days
     this._historyData = null;
     this._statisticsData = null;
+    this._entityCache = {}; // ⚡ Bolt: Cache for entity lookups
   }
 
   async connectedCallback() {
     super.connectedCallback();
+    if (this.hass) {
+      this._buildEntityCache();
+    }
     await this._loadTranslations();
     this._loadApexCharts();
     this._fetchConfig();
@@ -229,7 +233,9 @@ class PvOptimizerPanel extends LitElement {
       // Reactive update: Check if power budget sensor updated
       // This signals that an optimization cycle just finished
       const oldHass = changedProperties.get("hass");
+      // ⚡ Bolt: Rebuild cache if hass object changes to ensure entities are up-to-date
       if (oldHass && this.hass) {
+        this._buildEntityCache();
         const entityId = "sensor.pv_optimizer_power_budget";
         const oldState = oldHass.states[entityId];
         const newState = this.hass.states[entityId];
@@ -343,37 +349,85 @@ class PvOptimizerPanel extends LitElement {
     this._showComparison = !this._showComparison;
   }
 
+  /**
+   * ⚡ Bolt: Build a cache for frequently accessed entities to avoid slow lookups.
+   * This is a performance optimization to prevent iterating over all entities on every render.
+   */
+  _buildEntityCache() {
+    if (!this.hass?.states) return;
+
+    console.time("PV Optimizer: _buildEntityCache");
+    this._entityCache = {}; // Clear existing cache
+
+    for (const entityId in this.hass.states) {
+      if (!entityId.startsWith('sensor.pv_optimizer_')) continue;
+
+      // Simulation Ideal Devices
+      if (entityId.includes('simulation') && (entityId.includes('ideal') || entityId.includes('ideale'))) {
+        this._entityCache['simulation_ideal_devices'] = entityId;
+        continue;
+      }
+
+      // Real Ideal Devices
+      if ((entityId.includes('real') || entityId.includes('reale')) && (entityId.includes('ideal') || entityId.includes('ideale')) && !entityId.includes('simulation')) {
+        this._entityCache['real_ideal_devices'] = entityId;
+        continue;
+      }
+
+      // Simulation Power Budget
+      if (entityId.includes('simulation') && (entityId.includes('budget') || entityId.includes('leistung'))) {
+        this._entityCache['simulation_power_budget'] = entityId;
+        continue;
+      }
+
+      // Real Power Budget
+      if ((entityId.includes('budget') || entityId.includes('leistung')) && !entityId.includes('simulation')) {
+        this._entityCache['power_budget'] = entityId;
+        continue;
+      }
+    }
+    console.timeEnd("PV Optimizer: _buildEntityCache");
+  }
+
   _findEntityByTranslationKey(translationKey) {
-    if (!this.hass) return null;
-    // Search for entity with matching unique_id pattern
+    console.time(`PV Optimizer: _findEntityByTranslationKey('${translationKey}')`);
+    if (!this.hass) {
+      console.timeEnd(`PV Optimizer: _findEntityByTranslationKey('${translationKey}')`);
+      return null;
+    }
+
+    // ⚡ Bolt: Use the cache for an O(1) lookup
+    const cachedEntityId = this._entityCache[translationKey];
+    if (cachedEntityId && this.hass.states[cachedEntityId]) {
+      console.timeEnd(`PV Optimizer: _findEntityByTranslationKey('${translationKey}')`);
+      return this.hass.states[cachedEntityId];
+    }
+
+    // Fallback to the old method if not in cache (should be rare)
+    // This ensures resilience if the cache build fails or is delayed.
+    console.warn(`PV Optimizer: Cache miss for '${translationKey}'. Falling back to slow search.`);
     for (const entityId in this.hass.states) {
       if (entityId.startsWith('sensor.pv_optimizer_')) {
         const entity = this.hass.states[entityId];
-        // Check if the entity's unique_id ends with our translation key
-        const state = entity;
-        // Match by checking if entity ID contains key parts
-        if (translationKey === 'simulation_ideal_devices' &&
-          (entityId.includes('simulation') && (entityId.includes('ideal') || entityId.includes('ideale')))) {
+        if (translationKey === 'simulation_ideal_devices' && (entityId.includes('simulation') && (entityId.includes('ideal') || entityId.includes('ideale')))) {
+          this._entityCache[translationKey] = entityId; // Populate cache on miss
           return entity;
         }
-        if (translationKey === 'real_ideal_devices' &&
-          (entityId.includes('real') || entityId.includes('reale')) &&
-          (entityId.includes('ideal') || entityId.includes('ideale')) &&
-          !entityId.includes('simulation')) {
+        if (translationKey === 'real_ideal_devices' && (entityId.includes('real') || entityId.includes('reale')) && (entityId.includes('ideal') || entityId.includes('ideale')) && !entityId.includes('simulation')) {
+          this._entityCache[translationKey] = entityId; // Populate cache on miss
           return entity;
         }
-        if (translationKey === 'simulation_power_budget' &&
-          entityId.includes('simulation') &&
-          (entityId.includes('budget') || entityId.includes('leistung'))) {
+        if (translationKey === 'simulation_power_budget' && entityId.includes('simulation') && (entityId.includes('budget') || entityId.includes('leistung'))) {
+          this._entityCache[translationKey] = entityId; // Populate cache on miss
           return entity;
         }
-        if (translationKey === 'power_budget' &&
-          (entityId.includes('budget') || entityId.includes('leistung')) &&
-          !entityId.includes('simulation')) {
+        if (translationKey === 'power_budget' && (entityId.includes('budget') || entityId.includes('leistung')) && !entityId.includes('simulation')) {
+          this._entityCache[translationKey] = entityId; // Populate cache on miss
           return entity;
         }
       }
     }
+    console.timeEnd(`PV Optimizer: _findEntityByTranslationKey('${translationKey}')`);
     return null;
   }
 
