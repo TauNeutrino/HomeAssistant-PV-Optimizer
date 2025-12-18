@@ -10,6 +10,7 @@ Updated for multi-config-entry architecture:
 """
 
 import logging
+import re
 import voluptuous as vol
 from datetime import datetime
 
@@ -294,6 +295,11 @@ async def async_setup_connection(hass):
     ) -> None:
         """Update device color."""
         try:
+            color = msg["color"]
+            # 🛡️ Sentinel: Validate color format to prevent XSS.
+            if not re.match(r"^#[0-9a-fA-F]{6}$", color):
+                raise ValueError(f"Invalid color format: {color}")
+
             service_entry = _get_service_entry(hass)
             if not service_entry:
                 raise ValueError("Service entry not found")
@@ -312,7 +318,7 @@ async def async_setup_connection(hass):
             from .const import CONF_DEVICE_COLOR
             
             # Update device config with new color
-            await device_coordinator.async_update_device_config({CONF_DEVICE_COLOR: msg["color"]})
+            await device_coordinator.async_update_device_config({CONF_DEVICE_COLOR: color})
             
             connection.send_result(msg["id"], {"success": True})
             
