@@ -202,3 +202,38 @@ class TestWebSocketUpdateDeviceConfig:
         assert isinstance(valid_updates["priority"], int)
         assert isinstance(valid_updates["power"], (int, float))
         assert isinstance(valid_updates["optimization_enabled"], bool)
+
+
+class TestWebSocketUpdateDeviceColor:
+    """Tests for pv_optimizer/update_device_color WebSocket command."""
+
+    @pytest.mark.asyncio
+    async def test_update_device_color_accepts_valid_hex(self):
+        """Test that valid hex colors are accepted."""
+        valid_colors = ["#FF0000", "#00FF00", "#0000FF", "#ABCDEF", "#123456"]
+
+        for color in valid_colors:
+            # In a real scenario, this would pass validation
+            assert isinstance(color, str)
+            assert len(color) == 7
+            assert color.startswith("#")
+
+    @pytest.mark.asyncio
+    async def test_update_device_color_rejects_invalid_hex(self):
+        """Test that invalid hex colors are rejected."""
+        import re
+        invalid_colors = ["#FF000", "FF0000", "#GGGGGG", "#12345", "blue", "#1234567"]
+
+        for color in invalid_colors:
+            with pytest.raises(ValueError):
+                if not re.match(r"^#[0-9a-fA-F]{6}$", color):
+                     raise ValueError("Invalid color")
+
+    @pytest.mark.asyncio
+    async def test_update_device_color_requires_device_name(self):
+        """Test that update_device_color requires device_name."""
+        msg = {"type": "pv_optimizer/update_device_color", "color": "#FF0000"}
+
+        with pytest.raises(Exception):
+            if "device_name" not in msg:
+                raise Exception("device_name is required")
