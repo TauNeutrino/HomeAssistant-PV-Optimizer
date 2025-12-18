@@ -120,6 +120,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
         
         # Tracking for locking logic
         self.last_switch_time: Optional[datetime] = None
+        self.is_fault_locked: bool = False
         
         # Service coordinator reference (set during registration)
         self.service_coordinator: Optional["ServiceCoordinator"] = None
@@ -130,6 +131,13 @@ class DeviceCoordinator(DataUpdateCoordinator):
         # Persistence
         self._store = Store(hass, 1, f"pv_optimizer_device_{config_entry.entry_id}_{normalize_device_name(device_name)}")
         
+    def set_fault_lock(self, lock_status: bool):
+        """Set or clear the fault lock on the device."""
+        _LOGGER.debug(f"Setting fault lock for {self.device_name} to {lock_status}")
+        self.is_fault_locked = lock_status
+        # Request an immediate refresh to update entities
+        self.hass.async_create_task(self.async_request_refresh())
+
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass, set up state listeners."""
         await super().async_added_to_hass()
@@ -209,7 +217,8 @@ class DeviceCoordinator(DataUpdateCoordinator):
         """Update device state."""
         # Create device instance if needed
         if self.device_instance is None:
-            self.device_instance = create_device(self.hass, self.device_config)
+            # Pass coordinator to device instance
+            self.device_instance = create_device(self.hass, self.device_config, self)
         
         if self.device_instance is None:
             _LOGGER.warning(f"Failed to create device instance for {self.device_name}")
@@ -299,6 +308,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
             ATTR_IS_LOCKED: is_locked,
             "is_locked_timing": locked_timing,
             "is_locked_manual": locked_manual,
+            "is_fault_locked": self.is_fault_locked,
             "lock_reason": lock_reason,
             "is_available": is_available,
             "device_id": getattr(self, "device_id", None),
@@ -403,8 +413,12 @@ class DeviceCoordinator(DataUpdateCoordinator):
                     remaining = min_off - elapsed
                     lock_reason = f"Minimum off time: {remaining:.1f} min remaining"
         
-        # 2. Manual Lock (User Intervention)
+        # 2. Manual Lock (User Intervention) & Fault Lock
         locked_manual = False
+        if self.is_fault_locked:
+            locked_manual = True
+            lock_reason = "Device Fault - Failed to set value"
+
         last_target = self.device_state.get(ATTR_PVO_LAST_TARGET_STATE)
         
         # Only lock if we have a known last target state that differs from current
@@ -492,11 +506,15 @@ class DeviceCoordinator(DataUpdateCoordinator):
 
     async def reset_target_state(self) -> None:
         """Reset the last target state to None."""
+        # Clear any fault lock
+        self.is_fault_locked = False
+
         # Check if device is in an indeterminate state (neither ON nor OFF)
         # This happens for numeric devices when manually set to a value that matches neither target
         is_on = self.device_instance.is_on() if self.device_instance else False
         is_off = self.device_instance.is_off() if self.device_instance else False
         is_indeterminate = not is_on and not is_off
+
 
         if is_indeterminate and self.device_instance:
             _LOGGER.info(f"Resetting indeterminate device {self.device_name} to deactivated state to clear manual lock")
@@ -522,6 +540,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
             data = await self._store.async_load()
             if data:
                 self.device_state[ATTR_PVO_LAST_TARGET_STATE] = data.get("last_target_state")
+                self.is_fault_locked = data.get("is_fault_locked", False)
                 if data.get("last_switch_time"):
                     self.last_switch_time = dt_util.parse_datetime(data["last_switch_time"])
                 _LOGGER.info(f"Restored state for {self.device_name}: target={self.device_state.get(ATTR_PVO_LAST_TARGET_STATE)}, last_switch={self.last_switch_time}")
@@ -533,7 +552,8 @@ class DeviceCoordinator(DataUpdateCoordinator):
         try:
             data = {
                 "last_target_state": self.device_state.get(ATTR_PVO_LAST_TARGET_STATE),
-                "last_switch_time": self.last_switch_time.isoformat() if self.last_switch_time else None
+                "last_switch_time": self.last_switch_time.isoformat() if self.last_switch_time else None,
+                "is_fault_locked": self.is_fault_locked,
             }
             await self._store.async_save(data)
         except Exception as e:

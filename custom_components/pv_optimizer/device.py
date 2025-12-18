@@ -62,6 +62,7 @@ in the coordinator.
 """
 
 import logging
+import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
@@ -111,7 +112,7 @@ class PVDevice(ABC):
     - Entity registry access
     """
 
-    def __init__(self, hass: HomeAssistant, device_config: Dict[str, Any]) -> None:
+    def __init__(self, hass: HomeAssistant, device_config: Dict[str, Any], coordinator=None) -> None:
         """
         Initialize the device base class.
         
@@ -126,6 +127,7 @@ class PVDevice(ABC):
         self.config = device_config
         self.name = device_config["name"]
         self.entity_registry = er.async_get(hass)
+        self.coordinator = coordinator
 
     @abstractmethod
     async def activate(self) -> None:
@@ -160,9 +162,9 @@ class PVDevice(ABC):
 class SwitchDevice(PVDevice):
     """Device that controls a switch entity."""
 
-    def __init__(self, hass: HomeAssistant, device_config: Dict[str, Any]) -> None:
+    def __init__(self, hass: HomeAssistant, device_config: Dict[str, Any], coordinator=None) -> None:
         """Initialize the switch device."""
-        super().__init__(hass, device_config)
+        super().__init__(hass, device_config, coordinator)
         self.switch_entity_id = device_config[CONF_SWITCH_ENTITY_ID]
         self.invert = device_config.get(CONF_INVERT_SWITCH, False)
 
@@ -228,33 +230,52 @@ class SwitchDevice(PVDevice):
 class NumericDevice(PVDevice):
     """Device that controls numeric entities (number/input_number)."""
 
-    def __init__(self, hass: HomeAssistant, device_config: Dict[str, Any]) -> None:
+    def __init__(self, hass: HomeAssistant, device_config: Dict[str, Any], coordinator=None) -> None:
         """Initialize the numeric device."""
-        super().__init__(hass, device_config)
+        super().__init__(hass, device_config, coordinator)
         self.numeric_targets = device_config[CONF_NUMERIC_TARGETS]
 
-    async def activate(self) -> None:
-        """Activate the numeric device by setting targets to activated values."""
-        # This solves the problem of controlling multiple numeric entities for one device
-        for target in self.numeric_targets:
-            entity_id = target[CONF_NUMERIC_ENTITY_ID]
-            value = target[CONF_ACTIVATED_VALUE]
+    async def _set_and_verify_value(self, entity_id: str, value: float, retry_count: int = 1) -> None:
+        """Set a numeric value and verify its state after a delay."""
+        for attempt in range(retry_count + 1):
             await self.hass.services.async_call(
                 "number", "set_value",
                 {"entity_id": entity_id, "value": value}
             )
+            await asyncio.sleep(5)  # Wait for 5 seconds
+
+            state = self.hass.states.get(entity_id)
+            if state and state.state not in ['unknown', 'unavailable']:
+                try:
+                    current_value = float(state.state)
+                    if current_value == value:
+                        _LOGGER.debug(f"Successfully set {entity_id} to {value} on attempt {attempt + 1}")
+                        if self.coordinator and self.coordinator.is_fault_locked:
+                            self.coordinator.set_fault_lock(False)
+                        return
+                except (ValueError, TypeError):
+                    _LOGGER.warning(f"Could not parse state value for {entity_id}: {state.state}")
+
+            _LOGGER.warning(f"Failed to verify set value for {entity_id} on attempt {attempt + 1}")
+
+        _LOGGER.error(f"Failed to set {entity_id} to {value} after {retry_count + 1} attempts.")
+        if self.coordinator:
+            self.coordinator.set_fault_lock(True)
+
+    async def activate(self) -> None:
+        """Activate the numeric device by setting targets to activated values."""
+        for target in self.numeric_targets:
+            entity_id = target[CONF_NUMERIC_ENTITY_ID]
+            value = target[CONF_ACTIVATED_VALUE]
+            await self._set_and_verify_value(entity_id, value)
             _LOGGER.debug(f"Activated numeric device {self.name}: set {entity_id} to {value}")
 
     async def deactivate(self) -> None:
         """Deactivate the numeric device by setting targets to deactivated values."""
-        # This solves the problem of resetting multiple numeric entities when deactivating
         for target in self.numeric_targets:
             entity_id = target[CONF_NUMERIC_ENTITY_ID]
             value = target[CONF_DEACTIVATED_VALUE]
-            await self.hass.services.async_call(
-                "number", "set_value",
-                {"entity_id": entity_id, "value": value}
-            )
+            await self._set_and_verify_value(entity_id, value)
             _LOGGER.debug(f"Deactivated numeric device {self.name}: set {entity_id} to {value}")
 
     def is_on(self) -> bool:
@@ -333,14 +354,14 @@ class NumericDevice(PVDevice):
         return "Manual Override - Custom Values Set:\n" + "\n".join(details)
 
 
-def create_device(hass: HomeAssistant, device_config: Dict[str, Any]) -> Optional[PVDevice]:
+def create_device(hass: HomeAssistant, device_config: Dict[str, Any], coordinator=None) -> Optional[PVDevice]:
     """Factory function to create the appropriate device instance."""
     # This solves the problem of instantiating the correct device subclass based on type
     device_type = device_config.get(CONF_TYPE)
     if device_type == TYPE_SWITCH:
-        return SwitchDevice(hass, device_config)
+        return SwitchDevice(hass, device_config, coordinator)
     elif device_type == TYPE_NUMERIC:
-        return NumericDevice(hass, device_config)
+        return NumericDevice(hass, device_config, coordinator)
     else:
         _LOGGER.error(f"Unknown device type: {device_type}")
         return None
