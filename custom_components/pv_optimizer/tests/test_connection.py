@@ -1,7 +1,7 @@
 """Integration tests for PV Optimizer WebSocket API."""
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from homeassistant.components import websocket_api
 from custom_components.pv_optimizer.connection import async_setup_connection
@@ -84,7 +84,8 @@ class TestWebSocketResetDevice:
             if "device_name" not in msg:
                 raise Exception("device_name is required")
 
-    @pytest.mark.asyncio    async def test_reset_device_clears_target_state(self, mock_hass):
+    @pytest.mark.asyncio
+    async def test_reset_device_clears_target_state(self, mock_hass):
         """Test that reset_device clears the target state."""
         mock_device_coordinator = Mock()
         mock_device_coordinator.reset_target_state = AsyncMock()
