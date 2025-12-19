@@ -242,22 +242,26 @@ class PvOptimizerPanel extends LitElement {
           'simulation_ideal_devices'
         ];
 
-        const needsUpdate = coreSensorsToWatch.some(key => {
+        const coreSensorChanged = coreSensorsToWatch.some(key => {
           const entityId = this._entityCache[key];
-          if (!entityId) return false; // Sensor might not exist (e.g., simulation disabled)
-
+          if (!entityId) return false; // Sensor might not exist
           const oldState = oldHass.states[entityId];
           const newState = this.hass.states[entityId];
-
-          // A direct object comparison is a reliable way to check for any state or attribute change.
           return oldState !== newState;
         });
 
-        if (needsUpdate) {
+        const deviceSensorChanged = (this._entityCache.device_configuration_sensors || []).some(entityId => {
+            if (!entityId) return false;
+            const oldState = oldHass.states[entityId];
+            const newState = this.hass.states[entityId];
+            return oldState !== newState;
+        });
+
+        if (coreSensorChanged || deviceSensorChanged) {
           // Debounce to prevent a storm of updates if multiple sensors change at once.
           if (this._debounceFetch) clearTimeout(this._debounceFetch);
           this._debounceFetch = setTimeout(() => {
-            console.log("PV Optimizer: Core sensor change detected, refreshing panel data...");
+            console.log("PV Optimizer: Core or device sensor change detected, refreshing panel data...");
             this._fetchConfig();
           }, 500);
         }
@@ -368,7 +372,9 @@ class PvOptimizerPanel extends LitElement {
     if (!this.hass?.states) return;
 
     console.time("PV Optimizer: _buildEntityCache");
-    this._entityCache = {}; // Clear existing cache
+    this._entityCache = {
+        device_configuration_sensors: []
+    }; // Clear existing cache and initialize for device sensors
 
     for (const entityId in this.hass.states) {
       if (!entityId.startsWith('sensor.pv_optimizer_')) continue;
@@ -401,6 +407,12 @@ class PvOptimizerPanel extends LitElement {
       if ((entityId.includes('budget') || entityId.includes('leistung')) && !entityId.includes('simulation')) {
         this._entityCache['power_budget'] = entityId;
         continue;
+      }
+
+      // ⚡ Bolt: Capture all per-device configuration sensors.
+      // These entities hold lock states and other info that should trigger a UI refresh.
+      if (entityId.endsWith('_configuration')) {
+          this._entityCache.device_configuration_sensors.push(entityId);
       }
     }
     console.timeEnd("PV Optimizer: _buildEntityCache");
