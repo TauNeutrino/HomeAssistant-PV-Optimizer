@@ -60,10 +60,6 @@ class PvOptimizerPanel extends LitElement {
     this._loadApexCharts();
     this._fetchConfig();
 
-    // Auto-refresh every 30 seconds
-    this._refreshInterval = setInterval(() => {
-      this._fetchConfig();
-    }, 30000);
 
     // Update elapsed time every second
     this._secondInterval = setInterval(() => {
@@ -206,10 +202,6 @@ class PvOptimizerPanel extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this._refreshInterval) {
-      clearInterval(this._refreshInterval);
-      this._refreshInterval = null;
-    }
     if (this._secondInterval) {
       clearInterval(this._secondInterval);
       this._secondInterval = null;
@@ -225,28 +217,51 @@ class PvOptimizerPanel extends LitElement {
 
   updated(changedProperties) {
     if (changedProperties.has("hass")) {
-      // Initial load
-      if (this.hass && !this._config) {
-        this._fetchConfig();
+      const oldHass = changedProperties.get("hass");
+
+      // ⚡ Bolt: Always rebuild the entity cache when HASS state changes.
+      // This is a quick, idempotent operation that ensures our entity IDs are always fresh.
+      if (this.hass) {
+        this._buildEntityCache();
       }
 
-      // Reactive update: Check if power budget sensor updated
-      // This signals that an optimization cycle just finished
-      const oldHass = changedProperties.get("hass");
-      // ⚡ Bolt: Rebuild cache if hass object changes to ensure entities are up-to-date
-      if (oldHass && this.hass) {
-        this._buildEntityCache();
-        const entityId = "sensor.pv_optimizer_power_budget";
-        const oldState = oldHass.states[entityId];
-        const newState = this.hass.states[entityId];
+      // Initial data load when the component is first rendered.
+      if (this.hass && !this._config) {
+        this._fetchConfig();
+        return; // No need for reactive check on the very first load.
+      }
 
-        if (oldState !== newState && newState) {
-          // Sensor changed (state or attributes/timestamp)
-          // Trigger refresh to get full config/stats
-          // Debounce slightly to allow other sensors to settle if needed
+      // ⚡ Bolt: Reactive update. Instead of polling, we watch for changes on key sensors.
+      // This is far more efficient than a 30s interval refresh.
+      if (oldHass && this.hass) {
+        const coreSensorsToWatch = [
+          'power_budget',
+          'surplus_avg',
+          'simulation_power_budget',
+          'real_ideal_devices',
+          'simulation_ideal_devices'
+        ];
+
+        const coreSensorChanged = coreSensorsToWatch.some(key => {
+          const entityId = this._entityCache[key];
+          if (!entityId) return false; // Sensor might not exist
+          const oldState = oldHass.states[entityId];
+          const newState = this.hass.states[entityId];
+          return oldState !== newState;
+        });
+
+        const deviceSensorChanged = (this._entityCache.device_configuration_sensors || []).some(entityId => {
+            if (!entityId) return false;
+            const oldState = oldHass.states[entityId];
+            const newState = this.hass.states[entityId];
+            return oldState !== newState;
+        });
+
+        if (coreSensorChanged || deviceSensorChanged) {
+          // Debounce to prevent a storm of updates if multiple sensors change at once.
           if (this._debounceFetch) clearTimeout(this._debounceFetch);
           this._debounceFetch = setTimeout(() => {
-            console.log("PV Optimizer: Power budget updated, refreshing config...");
+            console.log("PV Optimizer: Core or device sensor change detected, refreshing panel data...");
             this._fetchConfig();
           }, 500);
         }
@@ -357,7 +372,9 @@ class PvOptimizerPanel extends LitElement {
     if (!this.hass?.states) return;
 
     console.time("PV Optimizer: _buildEntityCache");
-    this._entityCache = {}; // Clear existing cache
+    this._entityCache = {
+        device_configuration_sensors: []
+    }; // Clear existing cache and initialize for device sensors
 
     for (const entityId in this.hass.states) {
       if (!entityId.startsWith('sensor.pv_optimizer_')) continue;
@@ -374,6 +391,12 @@ class PvOptimizerPanel extends LitElement {
         continue;
       }
 
+      // Average Surplus
+      if (entityId.includes('surplus') && entityId.includes('avg')) {
+          this._entityCache['surplus_avg'] = entityId;
+          continue;
+      }
+
       // Simulation Power Budget
       if (entityId.includes('simulation') && (entityId.includes('budget') || entityId.includes('leistung'))) {
         this._entityCache['simulation_power_budget'] = entityId;
@@ -384,6 +407,12 @@ class PvOptimizerPanel extends LitElement {
       if ((entityId.includes('budget') || entityId.includes('leistung')) && !entityId.includes('simulation')) {
         this._entityCache['power_budget'] = entityId;
         continue;
+      }
+
+      // ⚡ Bolt: Capture all per-device configuration sensors.
+      // These entities hold lock states and other info that should trigger a UI refresh.
+      if (entityId.endsWith('_configuration')) {
+          this._entityCache.device_configuration_sensors.push(entityId);
       }
     }
     console.timeEnd("PV Optimizer: _buildEntityCache");
@@ -416,6 +445,10 @@ class PvOptimizerPanel extends LitElement {
         if (translationKey === 'real_ideal_devices' && (entityId.includes('real') || entityId.includes('reale')) && (entityId.includes('ideal') || entityId.includes('ideale')) && !entityId.includes('simulation')) {
           this._entityCache[translationKey] = entityId; // Populate cache on miss
           return entity;
+        }
+        if (translationKey === 'surplus_avg' && entityId.includes('surplus') && entityId.includes('avg')) {
+            this._entityCache[translationKey] = entityId; // Populate cache on miss
+            return entity;
         }
         if (translationKey === 'simulation_power_budget' && entityId.includes('simulation') && (entityId.includes('budget') || entityId.includes('leistung'))) {
           this._entityCache[translationKey] = entityId; // Populate cache on miss
