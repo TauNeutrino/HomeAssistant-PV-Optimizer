@@ -22,6 +22,7 @@ Device Entry (entry_type="device")
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -662,6 +663,8 @@ class ServiceCoordinator(DataUpdateCoordinator):
         
         Returns global data for sensors.
         """
+        _LOGGER.debug("⚡ Bolt: Starting performance measurement for optimization cycle.")
+        start_time = time.time()
         # Collect device states from all device coordinators
         device_states = {}
         for device_name, coordinator in self.device_coordinators.items():
@@ -721,6 +724,9 @@ class ServiceCoordinator(DataUpdateCoordinator):
         _LOGGER.warning(f"DEBUG TOTALS: Measured={power_measured_total}, Rated={power_rated_total}")
         _LOGGER.warning(f"DEBUG DEVICE STATES: {device_states}")
 
+        end_time = time.time()
+        execution_time = (end_time - start_time) * 1000  # in milliseconds
+        _LOGGER.info(f"⚡ Bolt: Optimization cycle finished in {execution_time:.2f}ms.")
         # Return data for sensors
         return {
             "optimizer_stats": {
